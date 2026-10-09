@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { NAV, canSee, firstAllowedPath } from './auth/permissions'
 import Login from './pages/Login'
@@ -21,7 +21,7 @@ const PAGES: Record<string, ReactElement> = {
 function Gate() {
   const { loading, session, employee, roles, error, signOut } = useAuth()
 
-  if (loading) return <div className="center muted">Loading…</div>
+  if (loading) return <div className="center muted">Loadingâ€¦</div>
   if (!session) return <Login />
   if (!employee) {
     return (
@@ -53,10 +53,10 @@ function Gate() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AuthProvider>
         <Gate />
       </AuthProvider>
-    </BrowserRouter>
+    </HashRouter>
   )
 }

@@ -1,4 +1,4 @@
-name: Deploy to GitHub Page
+name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
@@ -15,15 +15,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: novolos/package-lock.json
       - run: npm ci
+        working-directory: novolos
       - run: npm run build
+        working-directory: novolos
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: novolos/dist
   deploy:
     needs: build
     runs-on: ubuntu-latest

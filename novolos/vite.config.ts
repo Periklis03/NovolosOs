@@ -4,6 +4,6 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   // GitHub Pages serves the site from /NovolosOs/
-  base: process.env.GITHUB_PAGES ? '/NovolosOs/' : '/',
+  base: '/NovolosOs/',
   plugins: [react()],
 })

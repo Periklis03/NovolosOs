@@ -21,7 +21,7 @@ const PAGES: Record<string, ReactElement> = {
 function Gate() {
   const { loading, session, employee, roles, error, signOut } = useAuth()
 
-  if (loading) return <div className="center muted">Loadingâ€¦</div>
+  if (loading) return <div className="center muted">Loading</div>
   if (!session) return <Login />
   if (!employee) {
     return (

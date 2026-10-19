@@ -122,6 +122,8 @@ function Import() {
     const parsed = parseCsv(await f.text())
     e.target.value = '' // so choosing the same file again fires onChange
     const probs: string[] = []
+    const seenIds = new Map<string, number>()
+    const seenEmails = new Map<string, number>()
     const out = parsed.map((r, i) => {
       const line = i + 2
       if (!r.hris_id) probs.push(`Line ${line}: hris_id is required`)
@@ -130,6 +132,29 @@ function Import() {
       const fn = (r.function ?? '').toLowerCase()
       if (seniority && !SENIORITY.includes(seniority)) probs.push(`Line ${line}: seniority must be ${SENIORITY.join('/')}`)
       if (fn && !FUNCTIONS.includes(fn)) probs.push(`Line ${line}: function must be ${FUNCTIONS.join('/')}`)
+      // same checks the database would do, but with a readable message and line number
+      const years = r.years_experience ?? ''
+      if (years && !/^\d{1,2}(\.\d)?$/.test(years)) {
+        probs.push(`Line ${line}: years_experience must be a number from 0 to 99.9 (use a dot, e.g. 4.5), got "${years}"`)
+      }
+      const email = (r.email ?? '').toLowerCase()
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) probs.push(`Line ${line}: email "${r.email}" is not valid`)
+      const left = r.left_at ?? ''
+      if (left && (!/^\d{4}-\d{2}-\d{2}$/.test(left) || Number.isNaN(Date.parse(left)))) {
+        probs.push(`Line ${line}: left_at must be a date like 2026-10-31, got "${left}"`)
+      }
+      const active = (r.active ?? '').toLowerCase()
+      if (active && active !== 'true' && active !== 'false') probs.push(`Line ${line}: active must be true or false, got "${r.active}"`)
+      if (r.hris_id) {
+        const first = seenIds.get(r.hris_id)
+        if (first) probs.push(`Line ${line}: hris_id ${r.hris_id} already used on line ${first}`)
+        else seenIds.set(r.hris_id, line)
+      }
+      if (email) {
+        const first = seenEmails.get(email)
+        if (first) probs.push(`Line ${line}: email ${r.email} already used on line ${first}`)
+        else seenEmails.set(email, line)
+      }
       return {
         hris_id: r.hris_id, full_name: r.full_name, email: r.email, role_title: r.role_title,
         function: fn, seniority, years_experience: r.years_experience, education: r.education,
@@ -141,10 +166,18 @@ function Import() {
 
   const run = async () => {
     setBusy(true); setError(null); setMsg(null)
-    const { data, error } = await supabase.rpc('hris_import', { _rows: rows, _source: 'csv' })
+    const { data: runId, error } = await supabase.rpc('hris_import', { _rows: rows, _source: 'csv' })
+    if (error) { setBusy(false); setError(error.message); return }
+    // since 0005 a failed import returns normally; the run row says whether it worked
+    const { data: run, error: e2 } = await supabase
+      .from('hris_sync_run').select('status, rows_upserted, error').eq('id', runId).single()
     setBusy(false)
-    if (error) setError(error.message)
-    else { setMsg(`Imported ${rows.length} rows (sync run #${data}).`); setRows([]); setFileName('') }
+    if (e2) { setError(e2.message); return }
+    if (run.status === 'failed') {
+      setError(`Import failed, nothing was saved (sync run #${runId}). ${run.error ?? ''}`)
+      return
+    }
+    setMsg(`Imported ${run.rows_upserted} rows (sync run #${runId}).`); setRows([]); setFileName('')
   }
 
   const download = () => {
@@ -165,7 +198,12 @@ function Import() {
       {error && <div className="error">{error}</div>}
       {msg && <div className="ok">{msg}</div>}
       {fileName && <div className="muted">{fileName}: {rows.length} rows</div>}
-      {problems.length > 0 && <div className="error" style={{ marginTop: 8 }}>{problems.slice(0, 8).map((p) => <div key={p}>{p}</div>)}</div>}
+      {problems.length > 0 && (
+        <div className="error" style={{ marginTop: 8 }}>
+          {problems.slice(0, 8).map((p) => <div key={p}>{p}</div>)}
+          {problems.length > 8 && <div>…and {problems.length - 8} more. Fix these and choose the file again.</div>}
+        </div>
+      )}
       {rows.length > 0 && (
         <>
           <div className="muted" style={{ margin: '8px 0' }}>Preview (first 5):</div>

@@ -120,6 +120,7 @@ function Import() {
     if (!f) return
     setFileName(f.name)
     const parsed = parseCsv(await f.text())
+    e.target.value = '' // so choosing the same file again fires onChange
     const probs: string[] = []
     const out = parsed.map((r, i) => {
       const line = i + 2
@@ -209,31 +210,89 @@ function History() {
 }
 
 /* ---------- audit log ---------- */
-interface Entry { id: number; actor_id: string | null; action: string; entity_type: string; at: string }
+type Snapshot = Record<string, unknown> | null
+interface Entry {
+  id: number; actor_id: string | null; action: string; entity_type: string; at: string
+  before: Snapshot; after: Snapshot
+}
+
+const ACTION_LABEL: Record<string, string> = {
+  'employee_skill.validate': 'Skill validated',
+  'employee_skill.delete': 'Skill removed',
+  'app_role.insert': 'Role added',
+  'app_role.delete': 'Role removed',
+  'app_role.update': 'Role changed',
+}
+
+// Turns the before/after row snapshots into "whose" and "what changed"
+function describe(x: Entry, people: Record<string, string>, skills: Record<string, string>) {
+  const row = x.after ?? x.before ?? {}
+  const who = people[String(row.employee_id)] ?? 'unknown person'
+  const lvl = (s: Snapshot) => (s?.validated_level ?? '–') as string | number
+  if (x.entity_type === 'employee_skill') {
+    const skill = skills[String(row.skill_id)] ?? 'unknown skill'
+    if (x.action === 'employee_skill.delete') {
+      return { who, what: `${skill} removed (was validated ${lvl(x.before)}, self ${x.before?.self_level ?? '–'})` }
+    }
+    return { who, what: `${skill}: validated ${lvl(x.before)} → ${lvl(x.after)}` }
+  }
+  if (x.entity_type === 'app_role') {
+    if (x.action === 'app_role.update') return { who, what: `role ${x.before?.role} → ${x.after?.role}` }
+    return { who, what: `role ${row.role}` }
+  }
+  // fallback for tables audited later: list the columns that changed
+  const changed = Object.keys(x.after ?? {}).filter(
+    (k) => JSON.stringify(x.after?.[k]) !== JSON.stringify(x.before?.[k]) && k !== 'updated_at',
+  )
+  return { who, what: changed.length ? `changed: ${changed.join(', ')}` : '' }
+}
+
 function Audit() {
   const [list, setList] = useState<Entry[]>([])
-  const [names, setNames] = useState<Record<string, string>>({})
+  const [people, setPeople] = useState<Record<string, string>>({})
+  const [skills, setSkills] = useState<Record<string, string>>({})
+  const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     ;(async () => {
-      const [a, e] = await Promise.all([
-        supabase.from('audit_log').select('id, actor_id, action, entity_type, at').order('at', { ascending: false }).limit(50),
+      const [a, e, s] = await Promise.all([
+        supabase.from('audit_log').select('id, actor_id, action, entity_type, at, before, after')
+          .order('at', { ascending: false }).limit(50),
         supabase.from('employee').select('id, full_name'),
+        supabase.from('skill').select('id, name'),
       ])
+      const err = a.error ?? e.error ?? s.error
+      if (err) setError(err.message)
       setList((a.data ?? []) as Entry[])
-      setNames(Object.fromEntries((e.data ?? []).map((x) => [x.id, x.full_name])))
+      setPeople(Object.fromEntries((e.data ?? []).map((x) => [x.id, x.full_name])))
+      setSkills(Object.fromEntries((s.data ?? []).map((x) => [x.id, x.name])))
     })()
   }, [])
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      <div className="thead">Last 50 sensitive changes</div>
+      <div className="thead trow" style={{ borderBottom: '1px solid var(--line)' }}>
+        <div style={{ width: 120 }}>Action</div>
+        <div style={{ flex: 1 }}>Person · change</div>
+        <div style={{ width: 130 }}>By</div>
+        <div style={{ width: 150 }}>When</div>
+      </div>
+      {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
       {list.length === 0 && <div className="pad muted">Nothing logged yet.</div>}
-      {list.map((x) => (
-        <div className="trow" key={x.id}>
-          <span style={{ flex: 1, fontWeight: 600 }}>{x.action}</span>
-          <span className="muted">{x.actor_id ? names[x.actor_id] ?? 'unknown' : 'system / SQL editor'}</span>
-          <span className="muted">{new Date(x.at).toLocaleString()}</span>
-        </div>
-      ))}
+      {list.map((x) => {
+        const d = describe(x, people, skills)
+        return (
+          <div className="trow" key={x.id}>
+            <span style={{ width: 120, fontWeight: 600 }}>{ACTION_LABEL[x.action] ?? x.action}</span>
+            <span style={{ flex: 1 }}>
+              <b>{d.who}</b>
+              {d.what && <span className="muted"> · {d.what}</span>}
+            </span>
+            <span className="muted" style={{ width: 130 }}>
+              {x.actor_id ? people[x.actor_id] ?? 'unknown' : 'system / SQL editor'}
+            </span>
+            <span className="muted" style={{ width: 150 }}>{new Date(x.at).toLocaleString()}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }

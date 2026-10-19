@@ -19,7 +19,7 @@ const PAGES: Record<string, ReactElement> = {
 }
 
 function Gate() {
-  const { loading, session, employee, roles, error, signOut } = useAuth()
+  const { loading, session, employee, roles, error, inactive, signOut } = useAuth()
 
   if (loading) return <div className="center muted">Loading</div>
   if (!session) return <Login />
@@ -27,7 +27,7 @@ function Gate() {
     return (
       <div className="center">
         <div className="card login">
-          <h1>Account not linked</h1>
+          <h1>{inactive ? 'Account inactive' : 'Account not linked'}</h1>
           <div className="error">{error ?? 'No employee found for this login.'}</div>
           <button onClick={signOut}>Sign out</button>
         </div>

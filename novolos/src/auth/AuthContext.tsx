@@ -18,6 +18,7 @@ interface AuthState {
   employee: Employee | null
   roles: RoleName[]
   error: string | null
+  inactive: boolean
   signIn: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
 }
@@ -30,6 +31,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<RoleName[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [inactive, setInactive] = useState(false)
+  // which login the employee/roles below belong to (avoids an "Account not linked" flash)
+  const [loadedFor, setLoadedFor] = useState<string | null>(null)
 
   // 1) keep the Supabase session in state
   useEffect(() => {
@@ -42,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!s) {
         setEmployee(null)
         setRoles([])
+        setLoadedFor(null)
         setLoading(false)
       }
     })
@@ -55,6 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     setLoading(true)
     setError(null)
+    setInactive(false)
+    const done = () => { setLoading(false); setLoadedFor(userId) }
     ;(async () => {
       const { data: emp, error: e1 } = await supabase
         .from('employee')
@@ -64,14 +71,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       if (e1) {
         setError(e1.message)
-        setLoading(false)
+        done()
         return
       }
       if (!emp) {
-        setError('Your login is not linked to an employee. Ask an admin to link your email.')
+        // RLS hides inactive employees, so ask the database which case this is
+        const { data: status } = await supabase.rpc('my_account_status')
+        if (cancelled) return
+        setError(
+          status === 'inactive'
+            ? 'Your account is inactive. If this is a mistake, contact HR.'
+            : 'Your login is not linked to an employee. Ask an admin to link your email.',
+        )
+        setInactive(status === 'inactive')
         setEmployee(null)
         setRoles([])
-        setLoading(false)
+        done()
         return
       }
       const { data: rows, error: e2 } = await supabase
@@ -82,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (e2) setError(e2.message)
       setEmployee(emp as Employee)
       setRoles((rows ?? []).map((r) => r.role as RoleName))
-      setLoading(false)
+      done()
     })()
     return () => {
       cancelled = true
@@ -97,8 +112,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  // still loading while a session exists but its employee hasn't been loaded yet
+  const busy = loading || (!!userId && loadedFor !== userId)
+
   return (
-    <Ctx.Provider value={{ loading, session, employee, roles, error, signIn, signOut }}>
+    <Ctx.Provider value={{ loading: busy, session, employee, roles, error, inactive, signIn, signOut }}>
       {children}
     </Ctx.Provider>
   )

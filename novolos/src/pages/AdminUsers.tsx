@@ -11,6 +11,13 @@ const ROLES: { id: RoleName; label: string }[] = [
   { id: 'admin', label: 'Admin' },
 ]
 
+// 12 characters without look-alikes (0/O, 1/l/I), so it's easy to read out or type
+function randomPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('')
+}
+
 interface Person {
   id: string
   full_name: string
@@ -30,6 +37,8 @@ export default function Users() {
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null) // id of the row being saved
+  const [loginFor, setLoginFor] = useState<string | null>(null) // row with the "create login" form open
+  const [tempPassword, setTempPassword] = useState('')
 
   const load = useCallback(async () => {
     const [e, r] = await Promise.all([
@@ -80,6 +89,32 @@ export default function Users() {
       `${p.full_name} is now ${active ? 'active' : 'inactive'}.`)
   }
 
+  const openLoginForm = (p: Person) => {
+    setLoginFor(p.id); setTempPassword(randomPassword()); setError(null); setMsg(null)
+  }
+
+  // The login is created by the "create-login" Edge Function (it holds the secret key).
+  const createLogin = async (p: Person) => {
+    setBusy(p.id); setError(null); setMsg(null)
+    const { error } = await supabase.functions.invoke('create-login', {
+      body: { employee_id: p.id, password: tempPassword },
+    })
+    setBusy(null)
+    if (error) {
+      // the function sends a readable reason in the response body
+      let reason = error.message
+      try {
+        const body = await (error as { context?: Response }).context?.json()
+        if (body?.error) reason = body.error
+      } catch { /* keep error.message */ }
+      setError(reason)
+      return
+    }
+    setMsg(`Login created for ${p.full_name}. They sign in with ${p.email} and the temporary password: ${tempPassword}  (give it to them in person, it is not shown again)`)
+    setLoginFor(null)
+    await load()
+  }
+
   // team leads to choose from: active people with the team_lead role
   const leads = people.filter((x) => x.active && (roles[x.id] ?? []).includes('team_lead'))
   const needle = q.trim().toLowerCase()
@@ -97,6 +132,26 @@ export default function Users() {
           Show inactive
         </label>
         <span className="muted">{shown.length} {shown.length === 1 ? 'person' : 'people'}</span>
+        {loginFor && (() => {
+          const p = people.find((x) => x.id === loginFor)
+          if (!p) return null
+          return (
+            <div className="card" style={{ width: '100%', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: 12 }}>
+              <span>Create a login for <b>{p.full_name}</b> ({p.email}). Temporary password:</span>
+              <input
+                value={tempPassword}
+                onChange={(e) => setTempPassword(e.target.value)}
+                aria-label="Temporary password"
+                style={{ fontFamily: 'monospace', minWidth: 180 }}
+              />
+              <button className="small" disabled={busy === p.id || tempPassword.length < 8} onClick={() => createLogin(p)}>
+                {busy === p.id ? 'Creating…' : 'Create login'}
+              </button>
+              <button className="ghost small" style={{ marginTop: 0 }} onClick={() => setLoginFor(null)}>Cancel</button>
+              {tempPassword.length < 8 && <span className="muted">at least 8 characters</span>}
+            </div>
+          )
+        })()}
         {noRole > 0 && <span className="tag bad">{noRole} active without a role</span>}
       </div>
       {error && <div className="error">{error}</div>}
@@ -107,7 +162,7 @@ export default function Users() {
           <div style={{ flex: 1 }}>Person</div>
           <div style={{ width: 290 }}>Roles</div>
           <div style={{ width: 170 }}>Team lead</div>
-          <div style={{ width: 70 }}>Login</div>
+          <div style={{ width: 100 }}>Login</div>
           <div style={{ width: 90 }}>Status</div>
         </div>
         {shown.length === 0 && <div className="pad muted">No one matches.</div>}
@@ -153,8 +208,12 @@ export default function Users() {
                   {leadOptions.map((l) => <option key={l.id} value={l.id}>{l.full_name}</option>)}
                 </select>
               </div>
-              <div style={{ width: 70 }} className="muted" title={p.auth_user_id ? 'Has a login' : 'No login linked yet'}>
-                {p.auth_user_id ? 'yes' : 'no'}
+              <div style={{ width: 100 }} className="muted" title={p.auth_user_id ? 'Has a login' : 'No login linked yet'}>
+                {p.auth_user_id ? 'yes' : p.active && p.email && loginFor !== p.id ? (
+                  <button className="ghost small" style={{ marginTop: 0 }} disabled={busy === p.id} onClick={() => openLoginForm(p)}>
+                    Create login
+                  </button>
+                ) : 'no'}
               </div>
               <div style={{ width: 90 }}>
                 <button

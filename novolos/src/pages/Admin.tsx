@@ -3,8 +3,9 @@ import type { ChangeEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { parseCsv } from '../lib/csv'
+import Users from './AdminUsers'
 
-type Tab = 'proposals' | 'import' | 'history' | 'audit'
+type Tab = 'users' | 'proposals' | 'import' | 'history' | 'audit'
 
 const SENIORITY = ['junior', 'mid', 'senior', 'lead', 'principal']
 const FUNCTIONS = ['engineering', 'product', 'design', 'other']
@@ -13,7 +14,7 @@ const TEMPLATE =
   'H100,Jane Example,jane@demo.test,Backend Engineer,engineering,mid,4,BSc Computer Science,true,\n'
 
 export default function Admin() {
-  const [tab, setTab] = useState<Tab>('proposals')
+  const [tab, setTab] = useState<Tab>('users')
   const [rate, setRate] = useState<number | null>(null)
 
   useEffect(() => {
@@ -30,10 +31,11 @@ export default function Admin() {
         </div>
       </div>
       <div className="tabs">
-        {([['proposals', 'Skill proposals'], ['import', 'HRIS import'], ['history', 'Sync history'], ['audit', 'Audit log']] as [Tab, string][]).map(([id, label]) => (
+        {([['users', 'Users'], ['proposals', 'Skill proposals'], ['import', 'HRIS import'], ['history', 'Sync history'], ['audit', 'Audit log']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} className={tab === id ? 'tab on' : 'tab'} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
+      {tab === 'users' && <Users />}
       {tab === 'proposals' && <Proposals />}
       {tab === 'import' && <Import />}
       {tab === 'history' && <History />}
@@ -260,6 +262,7 @@ const ACTION_LABEL: Record<string, string> = {
   'app_role.insert': 'Role added',
   'app_role.delete': 'Role removed',
   'app_role.update': 'Role changed',
+  'employee.update': 'Employee updated',
 }
 
 // Turns the before/after row snapshots into "whose" and "what changed"
@@ -273,6 +276,15 @@ function describe(x: Entry, people: Record<string, string>, skills: Record<strin
       return { who, what: `${skill} removed (was validated ${lvl(x.before)}, self ${x.before?.self_level ?? '–'})` }
     }
     return { who, what: `${skill}: validated ${lvl(x.before)} → ${lvl(x.after)}` }
+  }
+  if (x.entity_type === 'employee') {
+    const changes: string[] = []
+    if (x.before?.lead_id !== x.after?.lead_id) {
+      const name = (v: unknown) => (v ? people[String(v)] ?? 'unknown' : 'none')
+      changes.push(`team lead ${name(x.before?.lead_id)} → ${name(x.after?.lead_id)}`)
+    }
+    if (x.before?.active !== x.after?.active) changes.push(x.after?.active ? 'reactivated' : 'deactivated')
+    return { who: String(x.after?.full_name ?? x.before?.full_name ?? 'unknown person'), what: changes.join(', ') }
   }
   if (x.entity_type === 'app_role') {
     if (x.action === 'app_role.update') return { who, what: `role ${x.before?.role} → ${x.after?.role}` }

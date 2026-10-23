@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { parseCsv } from '../lib/csv'
 import Users from './AdminUsers'
+import { findExact, findSimilar } from '../lib/skillNames'
 
 type Tab = 'users' | 'proposals' | 'import' | 'history' | 'audit'
 
@@ -53,16 +54,19 @@ function Proposals() {
   const { employee } = useAuth()
   const [list, setList] = useState<Proposal[]>([])
   const [cats, setCats] = useState<{ id: string; name: string }[]>([])
+  const [skills, setSkills] = useState<{ id: string; name: string; active: boolean; category: { name: string } | null }[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [p, c] = await Promise.all([
+    const [p, c, s] = await Promise.all([
       supabase.from('skill_proposal').select('id, name, note, category_id, proposer:proposed_by(full_name)').eq('status', 'pending').order('created_at'),
       supabase.from('skill_category').select('id, name').order('sort_order'),
+      supabase.from('skill').select('id, name, active, category:category_id(name)'),
     ])
     if (p.error) setError(p.error.message)
     setList((p.data ?? []) as unknown as Proposal[])
     setCats(c.data ?? [])
+    setSkills((s.data ?? []) as unknown as typeof skills)
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -89,20 +93,35 @@ function Proposals() {
       <div className="thead">Pending proposals · {list.length}</div>
       {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
       {list.length === 0 && <div className="pad muted">Nothing waiting.</div>}
-      {list.map((p) => (
-        <div className="trow" key={p.id}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600 }}>{p.name}</div>
-            <div className="muted">proposed by {p.proposer?.full_name ?? 'unknown'}</div>
+      {list.map((p) => {
+        // proposals made before 0007 can still match an existing skill
+        const exact = findExact(p.name, skills)
+        const similar = exact ? [] : findSimilar(p.name, skills)
+        return (
+          <div className="trow" key={p.id} data-proposal={p.name}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600 }}>{p.name}</div>
+              <div className="muted">proposed by {p.proposer?.full_name ?? 'unknown'}</div>
+              {exact && (
+                <div className="tag bad" style={{ display: 'inline-block', marginTop: 4 }}>
+                  Already exists: {exact.name} ({exact.category?.name}{exact.active ? '' : ', retired'}). Reject this proposal.
+                </div>
+              )}
+              {similar.length > 0 && (
+                <div style={{ marginTop: 4, fontSize: 12, color: '#8a6514' }}>
+                  ⚠ Similar to: {similar.map((s) => `${s.name} (${s.category?.name}${s.active ? '' : ', retired'})`).join(', ')}. Check it is really a different skill.
+                </div>
+              )}
+            </div>
+            <select value={p.category_id ?? ''} onChange={(e) => setCat(p.id, e.target.value)}>
+              <option value="" disabled>category…</option>
+              {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <button className="small" disabled={!p.category_id || !!exact} onClick={() => approve(p)}>Approve</button>
+            <button className="ghost small" onClick={() => reject(p)}>Reject</button>
           </div>
-          <select value={p.category_id ?? ''} onChange={(e) => setCat(p.id, e.target.value)}>
-            <option value="" disabled>category…</option>
-            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <button className="small" disabled={!p.category_id} onClick={() => approve(p)}>Approve</button>
-          <button className="ghost small" onClick={() => reject(p)}>Reject</button>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

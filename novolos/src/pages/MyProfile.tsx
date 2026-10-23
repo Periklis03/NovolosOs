@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
+import { findExact, findSimilar } from '../lib/skillNames'
 
 interface Row {
   id: string
@@ -85,6 +86,10 @@ export default function MyProfile() {
   const have = new Set(rows.map((r) => r.skill.id))
   const available = allSkills.filter((s) => !have.has(s.id))
 
+  // duplicate check while typing a proposal (the database checks again on save)
+  const exact = findExact(propName, allSkills)
+  const similar = exact ? [] : findSimilar(propName, allSkills)
+
   return (
     <div style={{ maxWidth: 780 }}>
       <h1>My profile</h1>
@@ -135,8 +140,20 @@ export default function MyProfile() {
           <select value={propCat} onChange={(e) => setPropCat(e.target.value)}>
             {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button onClick={propose} disabled={!propName.trim()}>Propose</button>
+          <button onClick={propose} disabled={!propName.trim() || !!exact}>Propose</button>
         </div>
+        {exact && (
+          <div className="error" style={{ marginTop: 10, marginBottom: 0 }}>
+            “{exact.name}” already exists. {have.has(exact.id) ? 'It is already on your profile.' : 'Add it from the list above instead.'}
+          </div>
+        )}
+        {similar.length > 0 && (
+          <div className="muted" style={{ marginTop: 10 }}>
+            Did you mean {similar.map((s, i) => (
+              <span key={s.id}>{i > 0 && ', '}<b>{s.name}</b></span>
+            ))}? If so, add it from the list above. Propose only if it is really a different skill.
+          </div>
+        )}
       </div>
     </div>
   )

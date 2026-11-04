@@ -4,9 +4,10 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { parseCsv } from '../lib/csv'
 import Users from './AdminUsers'
+import Taxonomy from './AdminTaxonomy'
 import { findExact, findSimilar } from '../lib/skillNames'
 
-type Tab = 'users' | 'proposals' | 'import' | 'history' | 'audit'
+type Tab = 'users' | 'taxonomy' | 'proposals' | 'import' | 'history' | 'audit'
 
 const SENIORITY = ['junior', 'mid', 'senior', 'lead', 'principal']
 const FUNCTIONS = ['engineering', 'product', 'design', 'other']
@@ -32,11 +33,12 @@ export default function Admin() {
         </div>
       </div>
       <div className="tabs">
-        {([['users', 'Users'], ['proposals', 'Skill proposals'], ['import', 'HRIS import'], ['history', 'Sync history'], ['audit', 'Audit log']] as [Tab, string][]).map(([id, label]) => (
+        {([['users', 'Users'], ['taxonomy', 'Taxonomy'], ['proposals', 'Skill proposals'], ['import', 'HRIS import'], ['history', 'Sync history'], ['audit', 'Audit log']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} className={tab === id ? 'tab on' : 'tab'} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
       {tab === 'users' && <Users />}
+      {tab === 'taxonomy' && <Taxonomy />}
       {tab === 'proposals' && <Proposals />}
       {tab === 'import' && <Import />}
       {tab === 'history' && <History />}
@@ -282,11 +284,43 @@ const ACTION_LABEL: Record<string, string> = {
   'app_role.delete': 'Role removed',
   'app_role.update': 'Role changed',
   'employee.update': 'Employee updated',
+  'skill.insert': 'Skill added',
+  'skill.update': 'Skill changed',
+  'skill.delete': 'Skill deleted',
+  'skill.retire': 'Skill retired',
+  'skill_category.insert': 'Category added',
+  'skill_category.update': 'Category changed',
+  'skill_category.delete': 'Category deleted',
 }
 
 // Turns the before/after row snapshots into "whose" and "what changed"
-function describe(x: Entry, people: Record<string, string>, skills: Record<string, string>) {
+function describe(x: Entry, people: Record<string, string>, skills: Record<string, string>, cats: Record<string, string> = {}) {
   const row = x.after ?? x.before ?? {}
+  const cat = (v: unknown) => cats[String(v)] ?? 'unknown category'
+  if (x.action === 'skill.retire') {
+    const a = x.after ?? {}
+    const what = a.moved_to
+      ? `${a.people ?? Number(a.moved ?? 0) + Number(a.had_both ?? 0)} people moved to ${a.moved_to}`
+      : `removed from ${a.removed ?? 0} profiles`
+    return { who: String(a.name ?? 'unknown skill'), what }
+  }
+  if (x.entity_type === 'skill') {
+    const name = String(x.after?.name ?? x.before?.name ?? 'unknown skill')
+    if (x.action === 'skill.insert') return { who: name, what: `added to ${cat(x.after?.category_id)}` }
+    if (x.action === 'skill.delete') return { who: name, what: 'deleted' }
+    const changes: string[] = []
+    if (x.before?.name !== x.after?.name) changes.push(`renamed from ${x.before?.name}`)
+    if (x.before?.category_id !== x.after?.category_id) changes.push(`moved ${cat(x.before?.category_id)} → ${cat(x.after?.category_id)}`)
+    if (x.before?.active !== x.after?.active) changes.push(x.after?.active ? 'reactivated' : 'retired')
+    return { who: name, what: changes.join(', ') }
+  }
+  if (x.entity_type === 'skill_category') {
+    const name = String(x.after?.name ?? x.before?.name ?? 'unknown category')
+    if (x.action === 'skill_category.insert') return { who: name, what: 'category added' }
+    if (x.action === 'skill_category.delete') return { who: name, what: 'category deleted' }
+    if (x.before?.name !== x.after?.name) return { who: name, what: `renamed from ${x.before?.name}` }
+    return { who: name, what: 'order changed' }
+  }
   const who = people[String(row.employee_id)] ?? 'unknown person'
   const lvl = (s: Snapshot) => (s?.validated_level ?? '–') as string | number
   if (x.entity_type === 'employee_skill') {
@@ -320,34 +354,37 @@ function Audit() {
   const [list, setList] = useState<Entry[]>([])
   const [people, setPeople] = useState<Record<string, string>>({})
   const [skills, setSkills] = useState<Record<string, string>>({})
+  const [cats, setCats] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     ;(async () => {
-      const [a, e, s] = await Promise.all([
+      const [a, e, s, c] = await Promise.all([
         supabase.from('audit_log').select('id, actor_id, action, entity_type, at, before, after')
           .order('at', { ascending: false }).limit(50),
         supabase.from('employee').select('id, full_name'),
         supabase.from('skill').select('id, name'),
+        supabase.from('skill_category').select('id, name'),
       ])
-      const err = a.error ?? e.error ?? s.error
+      const err = a.error ?? e.error ?? s.error ?? c.error
       if (err) setError(err.message)
       setList((a.data ?? []) as Entry[])
       setPeople(Object.fromEntries((e.data ?? []).map((x) => [x.id, x.full_name])))
       setSkills(Object.fromEntries((s.data ?? []).map((x) => [x.id, x.name])))
+      setCats(Object.fromEntries((c.data ?? []).map((x) => [x.id, x.name])))
     })()
   }, [])
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <div className="thead trow" style={{ borderBottom: '1px solid var(--line)' }}>
         <div style={{ width: 120 }}>Action</div>
-        <div style={{ flex: 1 }}>Person · change</div>
+        <div style={{ flex: 1 }}>Person or skill · change</div>
         <div style={{ width: 130 }}>By</div>
         <div style={{ width: 150 }}>When</div>
       </div>
       {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
       {list.length === 0 && <div className="pad muted">Nothing logged yet.</div>}
       {list.map((x) => {
-        const d = describe(x, people, skills)
+        const d = describe(x, people, skills, cats)
         return (
           <div className="trow" key={x.id}>
             <span style={{ width: 120, fontWeight: 600 }}>{ACTION_LABEL[x.action] ?? x.action}</span>

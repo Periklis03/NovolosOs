@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 interface Person {
@@ -93,6 +94,7 @@ export default function People() {
                     {d.validated_level == null && <small> unvalidated</small>}
                   </span>
                 ))}
+                <Link className="linkbtn" to={`/one-pager/${p.employee_id}`} style={{ marginLeft: 'auto' }}>Open one-pager →</Link>
               </div>
             )}
           </div>

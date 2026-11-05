@@ -8,6 +8,7 @@ import People from './pages/People'
 import Ask from './pages/Ask'
 import TeamValidation from './pages/TeamValidation'
 import Admin from './pages/Admin'
+import OnePager from './pages/OnePager'
 import Shell from './components/Shell'
 
 const PAGES: Record<string, ReactElement> = {
@@ -45,6 +46,8 @@ function Gate() {
             element={PAGES[n.path]}
           />
         ))}
+        {/* one-pager: open to every signed-in role; the database decides whose they can see */}
+        <Route path="/one-pager/:id" element={<OnePager />} />
         <Route path="*" element={<Navigate to={firstAllowedPath(roles)} replace />} />
       </Route>
     </Routes>

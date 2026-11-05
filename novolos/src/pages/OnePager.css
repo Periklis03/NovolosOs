@@ -1,0 +1,54 @@
+/* Employee one-pager: A4 landscape sheet in the company template (design doc figure 1) */
+
+.op-page { max-width: 1123px; }
+.op-toolbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.op-check { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ink); }
+button.op-btn { width: auto; margin: 0; }
+.op-foot { margin-top: 14px; }
+.op-foot a { color: var(--primary); }
+
+/* screen: the sheet is scaled down to the available width */
+.op-scale { position: relative; width: 100%; overflow: hidden; border-radius: 6px; box-shadow: 0 1px 6px rgba(0, 0, 0, .12); }
+.op-sheet {
+  --op-black: #0d0d0d; --op-gold: #b8975a; --op-gold-soft: #c9b98f; --op-text: #2b2b2b; --op-line: #e3e3e3;
+  position: absolute; top: 0; left: 0; transform-origin: top left;
+  width: 1123px; height: 794px; padding: 28px 32px 30px; background: #fff; color: var(--op-text);
+  font-family: 'Lato', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  display: flex; flex-direction: column; overflow: hidden;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+
+.op-head { margin-bottom: 14px; display: flex; align-items: center; gap: 22px; background: var(--op-black); color: #fff; border-radius: 16px; padding: 12px 26px; }
+.op-avatar { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--op-gold); color: var(--op-gold);
+  display: grid; place-items: center; font-weight: 700; font-size: 20px; flex: none; }
+.op-name { font-size: 27px; font-weight: 700; line-height: 1.15; }
+.op-role { color: var(--op-gold); font-weight: 700; font-size: 13.5px; margin-top: 2px; }
+.op-logo { margin-left: auto; font-size: 27px; font-weight: 700; letter-spacing: 4px; }
+.op-logo span { color: var(--op-gold); }
+
+.op-body { flex: 1; min-height: 0; display: grid; gap: 10px;
+  grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1.35fr .7fr 1fr;
+  grid-template-areas: 'tech value contrib' 'proof proof contrib' 'snap snap contrib'; }
+.op-box { border: 1px solid var(--op-line); border-radius: 14px; padding: 14px 16px; overflow: hidden; font-size: 11.5px; line-height: 1.5; min-height: 0; }
+.op-tech { grid-area: tech; } .op-value { grid-area: value; } .op-contrib { grid-area: contrib; }
+.op-proof { grid-area: proof; } .op-snap { grid-area: snap; }
+.op-box h2 { display: flex; align-items: center; gap: 10px; font-size: 14.5px; margin: 0 0 10px; color: #1a1a1a; }
+.op-box h2 i { font-style: normal; width: 24px; height: 24px; border-radius: 50%; background: var(--op-gold-soft);
+  color: #1a1a1a; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none; }
+.op-box p { margin: 0 0 7px; }
+.op-box ul { margin: 0; padding-left: 16px; }
+.op-box li { margin-bottom: 7px; }
+.op-snap { background: var(--op-gold-soft); border-color: var(--op-gold-soft); }
+.op-snap h2 { letter-spacing: 3px; font-size: 13.5px; }
+.op-hint { color: #9a9a9a; font-style: italic; }
+
+/* print: only the sheet, real size, one A4 landscape page */
+@media print {
+  @page { size: A4 landscape; margin: 0; }
+  body { background: #fff; }
+  .sidebar, .op-toolbar, .op-foot, .error, .op-hint { display: none !important; }
+  .layout { display: block; min-height: 0; }
+  main { padding: 0; max-width: none; }
+  .op-scale { height: auto !important; overflow: visible; box-shadow: none; border-radius: 0; }
+  .op-sheet { position: relative; transform: none !important; width: 297mm; height: 209mm; }
+}

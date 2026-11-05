@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { findExact, findSimilar } from '../lib/skillNames'
@@ -93,7 +94,10 @@ export default function MyProfile() {
   return (
     <div style={{ maxWidth: 780 }}>
       <h1>My profile</h1>
-      <p className="muted">{employee?.full_name} · {employee?.role_title ?? 'no title'}</p>
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+        <span className="muted">{employee?.full_name} · {employee?.role_title ?? 'no title'}</span>
+        {employee && <Link className="linkbtn" to={`/one-pager/${employee.id}`}>My one-pager →</Link>}
+      </div>
       {error && <div className="error">{error}</div>}
       {msg && <div className="ok">{msg}</div>}
 

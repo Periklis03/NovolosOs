@@ -47,3 +47,5 @@ button.small { width: auto; margin: 0; padding: 4px 9px; font-size: 12px; }
 .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
 .tab { background: transparent; color: var(--muted); border-radius: 0; border-bottom: 2px solid transparent; font-weight: 500; }
 .tab.on { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
+.linkbtn { color: var(--primary); font-size: 13px; font-weight: 600; text-decoration: none; }
+.linkbtn:hover { text-decoration: underline; }

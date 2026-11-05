@@ -16,6 +16,7 @@ interface Person {
   seniority: string | null
   years_experience: number | null
   education: string | null
+  active: boolean
 }
 interface SkillRow {
   validated_level: number | null
@@ -25,6 +26,8 @@ interface SkillRow {
 const SHEET_W = 1123 // A4 landscape at 96 dpi
 const SHEET_H = 794
 const LATER = 'Added later, once projects are in NovolosOS.'
+const PER_CATEGORY = 8 // at most this many skills named per category (fewer if section 1 would overflow)
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase()).slice(0, 3).join('')
@@ -39,12 +42,14 @@ export default function OnePager() {
   const [anon, setAnon] = useState(false)
   const [state, setState] = useState<'loading' | 'ready' | 'missing'>('loading')
   const [error, setError] = useState<string | null>(null)
+  const [perCat, setPerCat] = useState(PER_CATEGORY)
 
   const load = useCallback(async () => {
     setState('loading'); setError(null)
+    if (!UUID.test(id)) { setState('missing'); return } // a typo in the address: don't send a broken query
     const [p, s] = await Promise.all([
       supabase.from('employee')
-        .select('id, full_name, role_title, seniority, years_experience, education')
+        .select('id, full_name, role_title, seniority, years_experience, education, active')
         .eq('id', id).maybeSingle(),
       supabase.from('employee_skill')
         .select('validated_level, skill:skill_id(name, category:category_id(name, sort_order))')
@@ -55,8 +60,10 @@ export default function OnePager() {
     if (!p.data) { setState('missing'); return }
     const rows = (s.data ?? []) as unknown as SkillRow[]
     setPerson(p.data as Person)
-    setSkills(rows.filter((r) => r.validated_level != null))
+    // level 0 means "checked: doesn't have it", so it never goes on a one-pager
+    setSkills(rows.filter((r) => (r.validated_level ?? 0) > 0))
     setUnvalidated(rows.filter((r) => r.validated_level == null).length)
+    setPerCat(PER_CATEGORY)
     setState('ready')
   }, [id])
 
@@ -73,13 +80,13 @@ export default function OnePager() {
     }
     return [...groups.entries()]
       .sort((a, b) => a[1].order - b[1].order || a[0].localeCompare(b[0]))
-      .map(([name, g]) => ({
-        name,
-        skills: g.items
+      .map(([name, g]) => {
+        const all = g.items
           .sort((a, b) => (b.validated_level ?? 0) - (a.validated_level ?? 0) || a.skill.name.localeCompare(b.skill.name))
-          .map((r) => r.skill.name),
-      }))
-  }, [skills])
+          .map((r) => r.skill.name)
+        return { name, skills: all.slice(0, perCat), more: Math.max(0, all.length - perCat) }
+      })
+  }, [skills, perCat])
 
   // Snapshot "Core stack": strongest validated skills (level 3+), at most 8
   const coreStack = useMemo(() => {
@@ -87,6 +94,13 @@ export default function OnePager() {
     const strong = sorted.filter((r) => (r.validated_level ?? 0) >= 3)
     return (strong.length ? strong : sorted).slice(0, 8).map((r) => r.skill.name)
   }, [skills])
+
+  // If section 1 doesn't fit its box, name one skill fewer per category and measure again
+  const techRef = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const el = techRef.current
+    if (el && perCat > 1 && el.scrollHeight > el.clientHeight + 1) setPerCat(perCat - 1)
+  }, [byCategory, perCat])
 
   // Scale the A4 sheet down to fit the screen (print uses the real size)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -122,6 +136,7 @@ export default function OnePager() {
     window.print()
   }
 
+  const hidden = byCategory.reduce((n, g) => n + g.more, 0)
   const seniority = [person.seniority ? cap(person.seniority) : null,
     person.years_experience != null ? `(${person.years_experience} ${person.years_experience === 1 ? 'yr' : 'yrs'})` : null]
     .filter(Boolean).join(' ')
@@ -140,11 +155,22 @@ export default function OnePager() {
           <label className="op-check">
             <input type="checkbox" checked={anon} onChange={(e) => setAnon(e.target.checked)} /> Anonymised (initials only)
           </label>
-          <button onClick={downloadPdf}>Download PDF</button>
+          <button onClick={downloadPdf} disabled={!person.active}
+            title={person.active ? undefined : 'Not available for people who have left'}>Download PDF</button>
         </div>
       </div>
 
       {error && <div className="error">{error}</div>}
+      {!person.active && (
+        <div className="error">
+          {person.full_name} is inactive (no longer at the company). The one-pager is shown for reference only and can't be downloaded.
+        </div>
+      )}
+      {hidden > 0 && (
+        <div className="muted op-note">
+          To fit on one page, only the {perCat} strongest skills per category are named; the other {hidden} {hidden === 1 ? 'is' : 'are'} shown as “+N more”.
+        </div>
+      )}
 
       <div className="op-scale" ref={wrapRef} style={{ height: SHEET_H * scale }}>
         <div className="op-sheet" style={{ transform: `scale(${scale})` }}>
@@ -158,11 +184,11 @@ export default function OnePager() {
           </header>
 
           <div className="op-body">
-            <section className="op-box op-tech">
+            <section className="op-box op-tech" ref={techRef}>
               <h2><i>1</i>Tech Suitability - Fit to the Role</h2>
               {byCategory.length === 0 && <p className="op-hint">No validated skills yet.</p>}
               {byCategory.map((g) => (
-                <p key={g.name}><b>{g.name}:</b> {g.skills.join(', ')}</p>
+                <p key={g.name}><b>{g.name}:</b> {g.skills.join(', ')}{g.more > 0 && ` +${g.more} more`}</p>
               ))}
             </section>
 
@@ -186,6 +212,9 @@ export default function OnePager() {
               {seniority && <p><b>Seniority:</b> {seniority}</p>}
               {person.education && <p><b>Education:</b> {person.education}</p>}
               {coreStack.length > 0 && <p><b>Core stack:</b> {coreStack.join(', ')}</p>}
+              {!seniority && !person.education && coreStack.length === 0 && (
+                <p className="op-hint">No seniority, education or validated skills recorded yet.</p>
+              )}
             </section>
           </div>
         </div>

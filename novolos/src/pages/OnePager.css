@@ -5,6 +5,7 @@
 .op-check { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ink); }
 button.op-btn { width: auto; margin: 0; }
 .op-foot { margin-top: 14px; }
+.op-note { margin-bottom: 10px; }
 .op-foot a { color: var(--primary); }
 
 /* screen: the sheet is scaled down to the available width */
@@ -27,10 +28,10 @@ button.op-btn { width: auto; margin: 0; }
 .op-logo span { color: var(--op-gold); }
 
 .op-body { flex: 1; min-height: 0; display: grid; gap: 10px;
-  grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1.35fr .7fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1.75fr .55fr .95fr;
   grid-template-areas: 'tech value contrib' 'proof proof contrib' 'snap snap contrib'; }
 .op-box { border: 1px solid var(--op-line); border-radius: 14px; padding: 14px 16px; overflow: hidden; font-size: 11.5px; line-height: 1.5; min-height: 0; }
-.op-tech { grid-area: tech; } .op-value { grid-area: value; } .op-contrib { grid-area: contrib; }
+.op-tech { grid-area: tech; } .op-tech p { margin-bottom: 5px; } .op-value { grid-area: value; } .op-contrib { grid-area: contrib; }
 .op-proof { grid-area: proof; } .op-snap { grid-area: snap; }
 .op-box h2 { display: flex; align-items: center; gap: 10px; font-size: 14.5px; margin: 0 0 10px; color: #1a1a1a; }
 .op-box h2 i { font-style: normal; width: 24px; height: 24px; border-radius: 50%; background: var(--op-gold-soft);
@@ -39,6 +40,7 @@ button.op-btn { width: auto; margin: 0; }
 .op-box ul { margin: 0; padding-left: 16px; }
 .op-box li { margin-bottom: 7px; }
 .op-snap { background: var(--op-gold-soft); border-color: var(--op-gold-soft); }
+.op-snap .op-hint { color: #6f6447; }
 .op-snap h2 { letter-spacing: 3px; font-size: 13.5px; }
 .op-hint { color: #9a9a9a; font-style: italic; }
 
@@ -46,7 +48,7 @@ button.op-btn { width: auto; margin: 0; }
 @media print {
   @page { size: A4 landscape; margin: 0; }
   body { background: #fff; }
-  .sidebar, .op-toolbar, .op-foot, .error, .op-hint { display: none !important; }
+  .sidebar, .op-toolbar, .op-note, .op-foot, .error, .op-hint { display: none !important; }
   .layout { display: block; min-height: 0; }
   main { padding: 0; max-width: none; }
   .op-scale { height: auto !important; overflow: visible; box-shadow: none; border-radius: 0; }

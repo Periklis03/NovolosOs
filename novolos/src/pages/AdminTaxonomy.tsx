@@ -139,6 +139,22 @@ export default function Taxonomy() {
     setMsg(String(data)); setRetiring(null)
     await load()
   }
+  // Permanent delete: only for retired skills that nobody has. The database refuses it anyway
+  // if a profile still points to the skill, and the audit log keeps a record of the deletion.
+  const deleteSkill = async (s: Skill) => {
+    if (!window.confirm(`Delete “${s.name}” permanently? This can't be undone. (The audit log keeps a record.)`)) return
+    setBusy(true); setError(null); setMsg(null)
+    const { error } = await supabase.from('skill').delete().eq('id', s.id)
+    setBusy(false)
+    if (error) {
+      setError(error.message.includes('violates foreign key')
+        ? `“${s.name}” is still on someone's profile, so it can't be deleted. Reload the page to see the current numbers.`
+        : friendly(error.message))
+      await load(); return
+    }
+    setMsg(`“${s.name}” deleted permanently.`)
+    await load()
+  }
   const reactivate = (s: Skill) =>
     run(supabase.from('skill').update({ active: true }).eq('id', s.id), `“${s.name}” is active again and can be added to profiles.`)
 
@@ -185,7 +201,7 @@ export default function Taxonomy() {
                   <button className="ghost small" style={{ marginTop: 0, width: 'auto' }} disabled={busy || i === cats.length - 1} onClick={() => moveCategory(i, 1)} aria-label={`Move ${c.name} down`}>↓</button>
                   <button className="ghost small" style={{ marginTop: 0, width: 'auto' }} onClick={() => setEditing({ kind: 'category', id: c.id, value: c.name })}>Rename</button>
                   <button className="ghost small" style={{ marginTop: 0, width: 'auto' }} disabled={busy || inCat.length > 0}
-                    title={inCat.length > 0 ? 'Only empty categories can be deleted' : ''} onClick={() => deleteCategory(c)}>Delete</button>
+                    title={inCat.length > 0 ? 'Only empty categories can be deleted (retired skills count: delete them first)' : ''} onClick={() => deleteCategory(c)}>Delete</button>
                 </>
               )}
             </div>
@@ -225,7 +241,12 @@ export default function Taxonomy() {
                           onClick={() => { setEditing(null); setError(null); setMsg(null); setRetiring(isRetiring ? null : { id: s.id, mode: 'remove', target: '' }) }}>Retire…</button>
                       </>
                     ) : (
-                      <button className="small" disabled={busy} onClick={() => reactivate(s)}>Reactivate</button>
+                      <>
+                        <button className="small" disabled={busy} onClick={() => reactivate(s)}>Reactivate</button>
+                        <button className="ghost small" style={{ marginTop: 0, width: 'auto' }} disabled={busy || n > 0}
+                          title={n > 0 ? 'Still on someone’s profile: retire it again and move or remove them first' : 'Delete permanently'}
+                          onClick={() => deleteSkill(s)}>Delete</button>
+                      </>
                     )}
                   </div>
 

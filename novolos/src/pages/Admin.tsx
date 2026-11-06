@@ -358,18 +358,23 @@ function Audit() {
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     ;(async () => {
-      const [a, e, s, c] = await Promise.all([
+      const [a, e, s, c, gone] = await Promise.all([
         supabase.from('audit_log').select('id, actor_id, action, entity_type, at, before, after')
           .order('at', { ascending: false }).limit(50),
         supabase.from('employee').select('id, full_name'),
         supabase.from('skill').select('id, name'),
         supabase.from('skill_category').select('id, name'),
+        // names of deleted skills, so their old history still reads well
+        supabase.from('audit_log').select('entity_id, before').eq('action', 'skill.delete'),
       ])
-      const err = a.error ?? e.error ?? s.error ?? c.error
+      const err = a.error ?? e.error ?? s.error ?? c.error ?? gone.error
       if (err) setError(err.message)
       setList((a.data ?? []) as Entry[])
       setPeople(Object.fromEntries((e.data ?? []).map((x) => [x.id, x.full_name])))
-      setSkills(Object.fromEntries((s.data ?? []).map((x) => [x.id, x.name])))
+      setSkills({
+        ...Object.fromEntries((gone.data ?? []).map((x) => [x.entity_id, `${x.before?.name ?? 'unknown skill'} (deleted)`])),
+        ...Object.fromEntries((s.data ?? []).map((x) => [x.id, x.name])),
+      })
       setCats(Object.fromEntries((c.data ?? []).map((x) => [x.id, x.name])))
     })()
   }, [])

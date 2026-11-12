@@ -12,6 +12,7 @@ export const NAV: NavItem[] = [
   { path: '/me', label: 'My Profile', roles: ['admin', 'team_lead', 'user'] },
   { path: '/people', label: 'People & Skills', roles: ['admin', 'manager', 'team_lead'] },
   { path: '/team', label: 'Team validation', roles: ['admin', 'team_lead'] },
+  { path: '/projects', label: 'Projects', roles: ['admin', 'manager', 'team_lead'] },
   { path: '/admin', label: 'Admin', roles: ['admin'] },
 ]
 

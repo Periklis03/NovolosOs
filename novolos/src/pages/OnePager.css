@@ -39,6 +39,11 @@ button.op-btn { width: auto; margin: 0; }
 .op-box p { margin: 0 0 7px; }
 .op-box ul { margin: 0; padding-left: 16px; }
 .op-box li { margin-bottom: 7px; }
+.op-proj { margin-bottom: 9px; }
+.op-proj h3 { font-size: 12px; margin: 0 0 2px; display: flex; gap: 8px; }
+.op-proj h3 span { color: var(--op-gold); }
+.op-proj p { color: #555; font-size: 11px; margin: 0; }
+.op-more { color: #8a8a8a; font-size: 11px; }
 .op-snap { background: var(--op-gold-soft); border-color: var(--op-gold-soft); }
 .op-snap .op-hint { color: #6f6447; }
 .op-snap h2 { letter-spacing: 3px; font-size: 13.5px; }

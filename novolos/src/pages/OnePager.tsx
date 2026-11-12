@@ -3,11 +3,12 @@ import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import './OnePager.css'
+import { parseDate } from '../lib/projects'
 
 // Employee one-pager (design doc Module G, figure 1).
-// Shows only what is already in the database: employee info and validated skills.
-// Sections 2, 3 and 4 (added value, projects, proof points) stay empty until
-// projects exist in NovolosOS (Phase 2).
+// Shows only what is already in the database: employee info, validated skills and projects.
+// Sections 3 and 4 come from confirmed projects the person is on or has finished (not pipeline,
+// not cancelled, not future). Section 2 (added value) stays empty for now.
 
 interface Person {
   id: string
@@ -18,6 +19,9 @@ interface Person {
   education: string | null
   active: boolean
 }
+interface Done { project_id: string; project_name: string; role_title: string | null; start_date: string; end_date: string | null; timing: string }
+interface ProjReq { project_id: string; skill: { name: string } }
+const monthYear = (d: string) => parseDate(d).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
 interface SkillRow {
   validated_level: number | null
   skill: { name: string; category: { name: string; sort_order: number | null } | null }
@@ -25,7 +29,8 @@ interface SkillRow {
 
 const SHEET_W = 1123 // A4 landscape at 96 dpi
 const SHEET_H = 794
-const LATER = 'Added later, once projects are in NovolosOS.'
+const LATER = 'Added later.'
+const MAX_PROJECTS = 6 // most recent projects shown in section 3
 const PER_CATEGORY = 8 // at most this many skills named per category (fewer if section 1 would overflow)
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -43,19 +48,25 @@ export default function OnePager() {
   const [state, setState] = useState<'loading' | 'ready' | 'missing'>('loading')
   const [error, setError] = useState<string | null>(null)
   const [perCat, setPerCat] = useState(PER_CATEGORY)
+  const [done, setDone] = useState<Done[]>([])
+  const [stacks, setStacks] = useState<ProjReq[]>([])
 
   const load = useCallback(async () => {
     setState('loading'); setError(null)
     if (!UUID.test(id)) { setState('missing'); return } // a typo in the address: don't send a broken query
-    const [p, s] = await Promise.all([
+    const [p, s, a] = await Promise.all([
       supabase.from('employee')
         .select('id, full_name, role_title, seniority, years_experience, education, active')
         .eq('id', id).maybeSingle(),
       supabase.from('employee_skill')
         .select('validated_level, skill:skill_id(name, category:category_id(name, sort_order))')
         .eq('employee_id', id),
+      supabase.from('allocation_overview')
+        .select('project_id, project_name, role_title, start_date, end_date, timing')
+        .eq('employee_id', id).eq('stage', 'confirmed').neq('timing', 'future')
+        .order('start_date', { ascending: false }),
     ])
-    const err = p.error ?? s.error
+    const err = p.error ?? s.error ?? a.error
     if (err) { setError(err.message); setState('ready'); return }
     if (!p.data) { setState('missing'); return }
     const rows = (s.data ?? []) as unknown as SkillRow[]
@@ -64,6 +75,13 @@ export default function OnePager() {
     setSkills(rows.filter((r) => (r.validated_level ?? 0) > 0))
     setUnvalidated(rows.filter((r) => r.validated_level == null).length)
     setPerCat(PER_CATEGORY)
+    const projects = (a.data ?? []) as Done[]
+    setDone(projects)
+    const ids = [...new Set(projects.map((x) => x.project_id))]
+    const r = ids.length
+      ? await supabase.from('project_requirement').select('project_id, skill:skill_id(name)').in('project_id', ids)
+      : { data: [] }
+    setStacks((r.data ?? []) as unknown as ProjReq[])
     setState('ready')
   }, [id])
 
@@ -137,6 +155,17 @@ export default function OnePager() {
   }
 
   const hidden = byCategory.reduce((n, g) => n + g.more, 0)
+  // Section 4: for each project, the required skills this person holds at a validated level
+  const levelOf = new Map(skills.map((r) => [r.skill.name, r.validated_level ?? 0]))
+  const proofs = [...new Map(done.map((d) => [d.project_id, d.project_name])).entries()]
+    .map(([pid, name]) => ({
+      name,
+      skills: stacks.filter((r) => r.project_id === pid && levelOf.has(r.skill.name))
+        .sort((x, y) => (levelOf.get(y.skill.name) ?? 0) - (levelOf.get(x.skill.name) ?? 0))
+        .map((r) => r.skill.name),
+    }))
+    .filter((x) => x.skills.length > 0)
+    .slice(0, 3)
   const seniority = [person.seniority ? cap(person.seniority) : null,
     person.years_experience != null ? `(${person.years_experience} ${person.years_experience === 1 ? 'yr' : 'yrs'})` : null]
     .filter(Boolean).join(' ')
@@ -199,12 +228,22 @@ export default function OnePager() {
 
             <section className="op-box op-contrib">
               <h2><i>3</i>Contribution in Projects</h2>
-              <p className="op-hint">{LATER}</p>
+              {done.length === 0 && <p className="op-hint">No confirmed projects yet.</p>}
+              {done.slice(0, MAX_PROJECTS).map((d, i) => (
+                <div key={i} className="op-proj">
+                  <h3><span>➤</span>{d.project_name}</h3>
+                  <p>{d.role_title ? `${d.role_title} · ` : ''}{monthYear(d.start_date)} – {d.timing === 'current' || !d.end_date ? 'present' : monthYear(d.end_date)}</p>
+                </div>
+              ))}
+              {done.length > MAX_PROJECTS && <p className="op-more">+{done.length - MAX_PROJECTS} earlier {done.length - MAX_PROJECTS === 1 ? 'project' : 'projects'}</p>}
             </section>
 
             <section className="op-box op-proof">
               <h2><i>4</i>Proof Points</h2>
-              <p className="op-hint">{LATER}</p>
+              {proofs.length === 0 && <p className="op-hint">Projects whose required stack matches validated skills show here.</p>}
+              {proofs.map((x) => (
+                <p key={x.name}><b>{x.name}</b> - {x.skills.join(' · ')}</p>
+              ))}
             </section>
 
             <section className="op-box op-snap">

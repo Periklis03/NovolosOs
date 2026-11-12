@@ -22,6 +22,7 @@ export default function Taxonomy() {
   const [cats, setCats] = useState<Category[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
   const [counts, setCounts] = useState<Record<string, Count>>({})
+  const [used, setUsed] = useState<Record<string, { stacks: number; roles: number }>>({}) // project stacks & role profiles
   const [showRetired, setShowRetired] = useState(false)
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -33,12 +34,14 @@ export default function Taxonomy() {
   const [retiring, setRetiring] = useState<{ id: string; mode: 'remove' | 'move'; target: string } | null>(null)
 
   const load = useCallback(async () => {
-    const [c, s, es] = await Promise.all([
+    const [c, s, es, pr, rs] = await Promise.all([
       supabase.from('skill_category').select('id, name, sort_order').order('sort_order').order('name'),
       supabase.from('skill').select('id, name, category_id, active').order('name'),
       supabase.from('employee_skill').select('skill_id, validated_level'),
+      supabase.from('project_requirement').select('skill_id'),
+      supabase.from('role_profile_skill').select('skill_id'),
     ])
-    const err = c.error ?? s.error ?? es.error
+    const err = c.error ?? s.error ?? es.error ?? pr.error ?? rs.error
     if (err) { setError(err.message); return }
     setCats((c.data ?? []) as Category[])
     setSkills((s.data ?? []) as Skill[])
@@ -49,6 +52,10 @@ export default function Taxonomy() {
       if (r.validated_level != null) k.validated += 1
     }
     setCounts(byId)
+    const u: Record<string, { stacks: number; roles: number }> = {}
+    for (const r of pr.data ?? []) (u[r.skill_id] ??= { stacks: 0, roles: 0 }).stacks += 1
+    for (const r of rs.data ?? []) (u[r.skill_id] ??= { stacks: 0, roles: 0 }).roles += 1
+    setUsed(u)
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -254,7 +261,10 @@ export default function Taxonomy() {
                     <div className="pad" style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
                       <b>Retire “{s.name}”.</b>{' '}
                       {n === 0 ? 'Nobody has it, so no profile changes.' : `${n} ${n === 1 ? 'person has' : 'people have'} it on their profile. What should happen to them?`}
-                      {n > 0 && (
+                      {used[s.id] && (
+                        <span> Also used in {used[s.id].stacks} project {used[s.id].stacks === 1 ? 'stack' : 'stacks'} and {used[s.id].roles} role {used[s.id].roles === 1 ? 'profile' : 'profiles'}: they follow the same choice.</span>
+                      )}
+                      {(n > 0 || !!used[s.id]) && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '8px 0' }}>
                           <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6, fontWeight: 400, color: 'var(--ink)' }}>
                             <input type="radio" name="retire-mode" checked={retiring.mode === 'remove'} onChange={() => setRetiring({ ...retiring, mode: 'remove' })} />

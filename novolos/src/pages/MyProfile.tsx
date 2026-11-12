@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { findExact, findSimilar } from '../lib/skillNames'
+import MyProjects from './MyProjects'
 
 interface Row {
   id: string
@@ -28,6 +29,7 @@ export default function MyProfile() {
   const [addLevel, setAddLevel] = useState(3)
   const [propName, setPropName] = useState('')
   const [propCat, setPropCat] = useState('')
+  const [tab, setTab] = useState<'profile' | 'projects'>('profile')
 
   const load = useCallback(async () => {
     if (!employee) return
@@ -98,6 +100,12 @@ export default function MyProfile() {
         <span className="muted">{employee?.full_name} · {employee?.role_title ?? 'no title'}</span>
         {employee && <Link className="linkbtn" to={`/one-pager/${employee.id}`}>My one-pager →</Link>}
       </div>
+      <div className="tabs">
+        <button className={tab === 'profile' ? 'tab on' : 'tab'} onClick={() => setTab('profile')}>Profile</button>
+        <button className={tab === 'projects' ? 'tab on' : 'tab'} onClick={() => setTab('projects')}>Teams &amp; Projects</button>
+      </div>
+      {tab === 'projects' && employee && <MyProjects employeeId={employee.id} />}
+      {tab === 'profile' && <>
       {error && <div className="error">{error}</div>}
       {msg && <div className="ok">{msg}</div>}
 
@@ -159,6 +167,7 @@ export default function MyProfile() {
           </div>
         )}
       </div>
+      </>}
     </div>
   )
 }

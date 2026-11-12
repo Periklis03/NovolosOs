@@ -5,9 +5,10 @@ import { useAuth } from '../auth/AuthContext'
 import { parseCsv } from '../lib/csv'
 import Users from './AdminUsers'
 import Taxonomy from './AdminTaxonomy'
+import Roles from './AdminRoles'
 import { findExact, findSimilar } from '../lib/skillNames'
 
-type Tab = 'users' | 'taxonomy' | 'proposals' | 'import' | 'history' | 'audit'
+type Tab = 'users' | 'taxonomy' | 'roles' | 'proposals' | 'import' | 'history' | 'audit'
 
 const SENIORITY = ['junior', 'mid', 'senior', 'lead', 'principal']
 const FUNCTIONS = ['engineering', 'product', 'design', 'other']
@@ -33,12 +34,13 @@ export default function Admin() {
         </div>
       </div>
       <div className="tabs">
-        {([['users', 'Users'], ['taxonomy', 'Taxonomy'], ['proposals', 'Skill proposals'], ['import', 'HRIS import'], ['history', 'Sync history'], ['audit', 'Audit log']] as [Tab, string][]).map(([id, label]) => (
+        {([['users', 'Users'], ['taxonomy', 'Taxonomy'], ['roles', 'Role profiles'], ['proposals', 'Skill proposals'], ['import', 'HRIS import'], ['history', 'Sync history'], ['audit', 'Audit log']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} className={tab === id ? 'tab on' : 'tab'} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
       {tab === 'users' && <Users />}
       {tab === 'taxonomy' && <Taxonomy />}
+      {tab === 'roles' && <Roles />}
       {tab === 'proposals' && <Proposals />}
       {tab === 'import' && <Import />}
       {tab === 'history' && <History />}
@@ -291,18 +293,74 @@ const ACTION_LABEL: Record<string, string> = {
   'skill_category.insert': 'Category added',
   'skill_category.update': 'Category changed',
   'skill_category.delete': 'Category deleted',
+  'project.insert': 'Project added',
+  'project.update': 'Project changed',
+  'project.delete': 'Project deleted',
+  'project_requirement.insert': 'Stack changed',
+  'project_requirement.update': 'Stack changed',
+  'project_requirement.delete': 'Stack changed',
+  'allocation.insert': 'Added to project',
+  'allocation.update': 'Project booking changed',
+  'allocation.delete': 'Removed from project',
+  'role_profile.insert': 'Role profile added',
+  'role_profile.update': 'Role profile changed',
+  'role_profile.delete': 'Role profile deleted',
+  'role_profile_skill.insert': 'Role profile changed',
+  'role_profile_skill.update': 'Role profile changed',
+  'role_profile_skill.delete': 'Role profile changed',
 }
 
 // Turns the before/after row snapshots into "whose" and "what changed"
-function describe(x: Entry, people: Record<string, string>, skills: Record<string, string>, cats: Record<string, string> = {}) {
+function describe(x: Entry, people: Record<string, string>, skills: Record<string, string>, cats: Record<string, string> = {},
+  projects: Record<string, string> = {}, roleNames: Record<string, string> = {}) {
   const row = x.after ?? x.before ?? {}
+  const proj = (v: unknown) => projects[String(v)] ?? 'a deleted project'
+  const sk = (v: unknown) => skills[String(v)] ?? 'unknown skill'
+  const day = (v: unknown) => (v ? String(v) : 'open-ended')
+  if (x.entity_type === 'project') {
+    const name = String(x.after?.name ?? x.before?.name ?? 'unknown project')
+    if (x.action === 'project.insert') return { who: name, what: `added as ${x.after?.stage}` }
+    if (x.action === 'project.delete') return { who: name, what: 'deleted' }
+    const changes: string[] = []
+    if (x.before?.name !== x.after?.name) changes.push(`renamed from ${x.before?.name}`)
+    if (x.before?.stage !== x.after?.stage) changes.push(`${x.before?.stage} → ${x.after?.stage}`)
+    if (x.before?.start_date !== x.after?.start_date || x.before?.end_date !== x.after?.end_date)
+      changes.push(`dates ${day(x.after?.start_date)} – ${day(x.after?.end_date)}`)
+    if (x.before?.project_lead_id !== x.after?.project_lead_id)
+      changes.push(`project lead → ${x.after?.project_lead_id ? people[String(x.after.project_lead_id)] ?? 'unknown' : 'none'}`)
+    for (const k of ['client', 'description', 'win_probability']) if (JSON.stringify(x.before?.[k]) !== JSON.stringify(x.after?.[k])) changes.push(k.replace('_', ' '))
+    return { who: name, what: changes.join(', ') }
+  }
+  if (x.entity_type === 'project_requirement') {
+    const what = x.action.endsWith('delete') ? `${sk(row.skill_id)} removed from the stack`
+      : `${sk(row.skill_id)} ≥${row.min_level} × ${row.headcount}`
+    return { who: proj(row.project_id), what }
+  }
+  if (x.entity_type === 'allocation') {
+    const p = proj(row.project_id)
+    if (x.action === 'allocation.delete') return { who: people[String(row.employee_id)] ?? 'unknown person', what: `removed from ${p}` }
+    return { who: people[String(row.employee_id)] ?? 'unknown person',
+      what: `${p}${row.role_title ? ` as ${row.role_title}` : ''}, ${row.percent}%, ${day(row.start_date)} – ${day(row.end_date)}` }
+  }
+  if (x.entity_type === 'role_profile') {
+    const name = String(x.after?.name ?? x.before?.name ?? 'unknown role')
+    if (x.action === 'role_profile.update' && x.before?.name !== x.after?.name) return { who: name, what: `renamed from ${x.before?.name}` }
+    if (x.action === 'role_profile.update') return { who: name, what: x.after?.min_seniority ? `${x.after.min_seniority}+` : 'details changed' }
+    return { who: name, what: x.action.endsWith('insert') ? 'added' : 'deleted' }
+  }
+  if (x.entity_type === 'role_profile_skill') {
+    return { who: roleNames[String(row.role_profile_id)] ?? 'a deleted role profile',
+      what: x.action.endsWith('delete') ? `${sk(row.skill_id)} removed` : `${sk(row.skill_id)} ≥${row.min_level}` }
+  }
   const cat = (v: unknown) => cats[String(v)] ?? 'unknown category'
   if (x.action === 'skill.retire') {
     const a = x.after ?? {}
     const what = a.moved_to
       ? `${a.people ?? Number(a.moved ?? 0) + Number(a.had_both ?? 0)} people moved to ${a.moved_to}`
       : `removed from ${a.removed ?? 0} profiles`
-    return { who: String(a.name ?? 'unknown skill'), what }
+    const more = Number(a.project_stacks ?? 0) + Number(a.role_profiles ?? 0) > 0
+      ? `; also ${a.project_stacks ?? 0} project stacks, ${a.role_profiles ?? 0} role profiles` : ''
+    return { who: String(a.name ?? 'unknown skill'), what: what + more }
   }
   if (x.entity_type === 'skill') {
     const name = String(x.after?.name ?? x.before?.name ?? 'unknown skill')
@@ -355,10 +413,12 @@ function Audit() {
   const [people, setPeople] = useState<Record<string, string>>({})
   const [skills, setSkills] = useState<Record<string, string>>({})
   const [cats, setCats] = useState<Record<string, string>>({})
+  const [projects, setProjects] = useState<Record<string, string>>({})
+  const [roleNames, setRoleNames] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     ;(async () => {
-      const [a, e, s, c, gone] = await Promise.all([
+      const [a, e, s, c, gone, p, rp, goneP] = await Promise.all([
         supabase.from('audit_log').select('id, actor_id, action, entity_type, at, before, after')
           .order('at', { ascending: false }).limit(50),
         supabase.from('employee').select('id, full_name'),
@@ -366,8 +426,11 @@ function Audit() {
         supabase.from('skill_category').select('id, name'),
         // names of deleted skills, so their old history still reads well
         supabase.from('audit_log').select('entity_id, before').eq('action', 'skill.delete'),
+        supabase.from('project').select('id, name'),
+        supabase.from('role_profile').select('id, name'),
+        supabase.from('audit_log').select('entity_id, before').eq('action', 'project.delete'),
       ])
-      const err = a.error ?? e.error ?? s.error ?? c.error ?? gone.error
+      const err = a.error ?? e.error ?? s.error ?? c.error ?? gone.error ?? p.error ?? rp.error ?? goneP.error
       if (err) setError(err.message)
       setList((a.data ?? []) as Entry[])
       setPeople(Object.fromEntries((e.data ?? []).map((x) => [x.id, x.full_name])))
@@ -376,6 +439,11 @@ function Audit() {
         ...Object.fromEntries((s.data ?? []).map((x) => [x.id, x.name])),
       })
       setCats(Object.fromEntries((c.data ?? []).map((x) => [x.id, x.name])))
+      setProjects({
+        ...Object.fromEntries((goneP.data ?? []).map((x) => [x.entity_id, `${x.before?.name ?? 'unknown project'} (deleted)`])),
+        ...Object.fromEntries((p.data ?? []).map((x) => [x.id, x.name])),
+      })
+      setRoleNames(Object.fromEntries((rp.data ?? []).map((x) => [x.id, x.name])))
     })()
   }, [])
   return (
@@ -389,7 +457,7 @@ function Audit() {
       {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
       {list.length === 0 && <div className="pad muted">Nothing logged yet.</div>}
       {list.map((x) => {
-        const d = describe(x, people, skills, cats)
+        const d = describe(x, people, skills, cats, projects, roleNames)
         return (
           <div className="trow" key={x.id}>
             <span style={{ width: 120, fontWeight: 600 }}>{ACTION_LABEL[x.action] ?? x.action}</span>

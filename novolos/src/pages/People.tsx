@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import type { AllocationRow, Availability } from '../lib/projects'
+import { availabilityLabel, availabilityTone, fmtRange } from '../lib/projects'
 
 interface Person {
   employee_id: string
@@ -22,11 +24,16 @@ export default function People() {
   const [people, setPeople] = useState<Person[]>([])
   const [open, setOpen] = useState<string | null>(null)
   const [detail, setDetail] = useState<Detail[]>([])
+  const [bookings, setBookings] = useState<AllocationRow[]>([])
+  const [avail, setAvail] = useState<Record<string, Availability>>({})
+  const [onlyFree, setOnlyFree] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.from('skill').select('id, name').eq('active', true).order('name')
       .then(({ data }) => setSkills(data ?? []))
+    supabase.rpc('availability').then(({ data }) =>
+      setAvail(Object.fromEntries(((data ?? []) as Availability[]).map((a) => [a.employee_id, a]))))
   }, [])
 
   useEffect(() => {
@@ -45,12 +52,15 @@ export default function People() {
   const toggle = async (id: string) => {
     if (open === id) { setOpen(null); return }
     setOpen(id)
-    const { data } = await supabase
-      .from('employee_skill')
-      .select('id, self_level, validated_level, skill:skill_id(name)')
-      .eq('employee_id', id)
+    const [{ data }, b] = await Promise.all([
+      supabase.from('employee_skill').select('id, self_level, validated_level, skill:skill_id(name)').eq('employee_id', id),
+      supabase.from('allocation_overview').select('*').eq('employee_id', id).neq('timing', 'past').order('start_date'),
+    ])
+    setBookings((b.data ?? []) as AllocationRow[])
     setDetail(((data ?? []) as unknown as Detail[]).sort((a, b) => (b.validated_level ?? 0) - (a.validated_level ?? 0)))
   }
+
+  const shown = onlyFree ? people.filter((p) => (avail[p.employee_id]?.load ?? 0) < 100) : people
 
   return (
     <div style={{ maxWidth: 980 }}>
@@ -65,15 +75,18 @@ export default function People() {
         <select value={minLevel} disabled={!skill} onChange={(e) => setMinLevel(Number(e.target.value))}>
           {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>validated ≥ {n}</option>)}
         </select>
-        <span className="muted">{people.length} {people.length === 1 ? 'person' : 'people'}</span>
+        <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} /> Has free capacity now
+        </label>
+        <span className="muted">{shown.length} {shown.length === 1 ? 'person' : 'people'}</span>
       </div>
       {error && <div className="error">{error}</div>}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="thead trow" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div style={{ flex: 2 }}>Person</div><div style={{ flex: 1 }}>Seniority</div><div style={{ width: 130 }}>{skill ? 'Skill level' : ''}</div>
+          <div style={{ flex: 2 }}>Person</div><div style={{ flex: 1 }}>Seniority</div><div style={{ width: 130 }}>{skill ? 'Skill level' : ''}</div><div style={{ width: 150 }}>Availability</div>
         </div>
-        {people.length === 0 && <div className="pad muted">No one matches.</div>}
-        {people.map((p) => (
+        {shown.length === 0 && <div className="pad muted">No one matches.</div>}
+        {shown.map((p) => (
           <div key={p.employee_id}>
             <div className="trow clickable" onClick={() => toggle(p.employee_id)}>
               <div style={{ flex: 2 }}>
@@ -83,6 +96,9 @@ export default function People() {
               <div style={{ flex: 1 }}>{p.seniority ?? '–'}{p.years_experience != null ? ` · ${p.years_experience}y` : ''}</div>
               <div style={{ width: 130 }}>
                 {skill ? `validated ${p.skill_level ?? '–'} · self ${p.self_level ?? '–'}` : ''}
+              </div>
+              <div style={{ width: 150 }}>
+                <span className={`tag ${availabilityTone(avail[p.employee_id])}`}>{availabilityLabel(avail[p.employee_id])}</span>
               </div>
             </div>
             {open === p.employee_id && (
@@ -95,6 +111,11 @@ export default function People() {
                   </span>
                 ))}
                 <Link className="linkbtn" to={`/one-pager/${p.employee_id}`} style={{ marginLeft: 'auto' }}>Open one-pager →</Link>
+                <div style={{ flexBasis: '100%' }} className="muted">
+                  {bookings.length === 0 ? 'No current or upcoming projects.' : bookings.map((a, i) => (
+                    <span key={a.id}>{i > 0 && ' · '}<Link className="linkbtn" to={`/projects/${a.project_id}`}>{a.project_name}</Link> {a.percent}%{a.timing === 'future' ? ` from ${fmtRange(a.start_date, a.end_date).split(' – ')[0]}` : ''}{a.stage === 'pipeline' ? ' (tentative)' : ''}</span>
+                  ))}
+                </div>
               </div>
             )}
           </div>

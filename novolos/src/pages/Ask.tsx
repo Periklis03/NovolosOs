@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
+import AskRole from './AskRole'
 
 interface Skill { id: string; name: string }
 interface Person { employee_id: string; full_name: string; role_title: string | null; skill_level: number | null }
@@ -16,6 +17,7 @@ export default function Ask() {
   const [people, setPeople] = useState<Person[]>([])
   const [map, setMap] = useState<MapRow[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [question, setQuestion] = useState<'knows' | 'role'>('knows')
 
   useEffect(() => {
     supabase.from('skill').select('id, name').eq('active', true).order('name').then(({ data }) => {
@@ -48,7 +50,14 @@ export default function Ask() {
   return (
     <div style={{ maxWidth: 820 }}>
       <h1>Ask</h1>
-      <p className="muted">Who knows what?</p>
+      <div className="seg">
+        <button className={question === 'knows' ? 'on' : ''} onClick={() => setQuestion('knows')}>Who knows what?</button>
+        <button className={question === 'role' ? 'on' : ''} onClick={() => setQuestion('role')}>Who fits a role?</button>
+      </div>
+      {question === 'role' && (seesNames ? <AskRole /> : (
+        <div className="card muted">Matching people to a role is for team leaders, managers and HR.</div>
+      ))}
+      {question === 'knows' && <>
       {error && <div className="error">{error}</div>}
       <div className="row" style={{ marginBottom: 12 }}>
         <select value={skill} onChange={(e) => setSkill(e.target.value)}>
@@ -95,6 +104,7 @@ export default function Ask() {
           </div>
         ))}
       </div>
+      </>}
     </div>
   )
 }

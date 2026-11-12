@@ -9,6 +9,8 @@ import Ask from './pages/Ask'
 import TeamValidation from './pages/TeamValidation'
 import Admin from './pages/Admin'
 import OnePager from './pages/OnePager'
+import Projects from './pages/Projects'
+import ProjectDetail from './pages/ProjectDetail'
 import Shell from './components/Shell'
 
 const PAGES: Record<string, ReactElement> = {
@@ -16,6 +18,7 @@ const PAGES: Record<string, ReactElement> = {
   '/me': <MyProfile />,
   '/people': <People />,
   '/team': <TeamValidation />,
+  '/projects': <Projects />,
   '/admin': <Admin />,
 }
 
@@ -48,6 +51,9 @@ function Gate() {
         ))}
         {/* one-pager: open to every signed-in role; the database decides whose they can see */}
         <Route path="/one-pager/:id" element={<OnePager />} />
+        {NAV.some((n) => n.path === '/projects' && canSee(roles, n)) && (
+          <Route path="/projects/:id" element={<ProjectDetail />} />
+        )}
         <Route path="*" element={<Navigate to={firstAllowedPath(roles)} replace />} />
       </Route>
     </Routes>

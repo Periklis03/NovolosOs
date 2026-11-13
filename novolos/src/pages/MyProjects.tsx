@@ -45,7 +45,7 @@ export default function MyProjects({ employeeId }: { employeeId: string }) {
             <div>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{a.project_name}</div>
               <div className="muted">
-                {a.client ?? 'no client'} · {a.role_title ?? 'no role set'} · {a.percent}% · {fmtRange(a.start_date, a.end_date)}
+                {a.client ?? 'no client'} · {a.role_title ?? 'no role set'} · {fmtRange(a.start_date, a.end_date)}
               </div>
             </div>
             <span className={`st st-${a.project_status}`}>{STATUS_LABEL[a.project_status]}</span>

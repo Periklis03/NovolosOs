@@ -328,7 +328,7 @@ function describe(x: Entry, people: Record<string, string>, skills: Record<strin
       changes.push(`dates ${day(x.after?.start_date)} – ${day(x.after?.end_date)}`)
     if (x.before?.project_lead_id !== x.after?.project_lead_id)
       changes.push(`project lead → ${x.after?.project_lead_id ? people[String(x.after.project_lead_id)] ?? 'unknown' : 'none'}`)
-    for (const k of ['client', 'description', 'win_probability']) if (JSON.stringify(x.before?.[k]) !== JSON.stringify(x.after?.[k])) changes.push(k.replace('_', ' '))
+    for (const k of ['client', 'description']) if (JSON.stringify(x.before?.[k]) !== JSON.stringify(x.after?.[k])) changes.push(k.replace('_', ' '))
     return { who: name, what: changes.join(', ') }
   }
   if (x.entity_type === 'project_requirement') {
@@ -340,7 +340,7 @@ function describe(x: Entry, people: Record<string, string>, skills: Record<strin
     const p = proj(row.project_id)
     if (x.action === 'allocation.delete') return { who: people[String(row.employee_id)] ?? 'unknown person', what: `removed from ${p}` }
     return { who: people[String(row.employee_id)] ?? 'unknown person',
-      what: `${p}${row.role_title ? ` as ${row.role_title}` : ''}, ${row.percent}%, ${day(row.start_date)} – ${day(row.end_date)}` }
+      what: `${p}${row.role_title ? ` as ${row.role_title}` : ''}, ${day(row.start_date)} – ${day(row.end_date)}` }
   }
   if (x.entity_type === 'role_profile') {
     const name = String(x.after?.name ?? x.before?.name ?? 'unknown role')

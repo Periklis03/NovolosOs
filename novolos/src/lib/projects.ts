@@ -11,7 +11,6 @@ export interface ProjectRow {
   client: string | null
   description: string | null
   stage: Stage
-  win_probability: number | null
   start_date: string | null
   end_date: string | null
   project_lead_id: string | null
@@ -22,7 +21,6 @@ export interface AllocationRow {
   project_id: string
   employee_id: string
   role_title: string | null
-  percent: number
   start_date: string
   end_date: string | null
   project_name: string
@@ -31,7 +29,8 @@ export interface AllocationRow {
   project_status: Status
   timing: Timing
 }
-export interface Availability { employee_id: string; load: number; tentative: number; free_from: string | null }
+// busy = on a confirmed project that day; tentative = on a pipeline project that day (doesn't make them busy)
+export interface Availability { employee_id: string; busy: boolean; tentative: boolean; free_from: string | null }
 
 export const STATUS_LABEL: Record<Status, string> = {
   pipeline: 'Pipeline', upcoming: 'Upcoming', active: 'Active', closing: 'Closing', delivered: 'Delivered', cancelled: 'Cancelled',
@@ -55,31 +54,29 @@ export const todayIso = () => {
 
 export function availabilityLabel(a: Availability | undefined) {
   if (!a) return '–'
-  const main = a.load <= 0 ? 'Free now'
-    : a.load < 100 ? `${100 - a.load}% free`
-    : a.free_from ? `Free from ${fmtDate(a.free_from)}` : 'Fully booked'
-  return a.tentative > 0 ? `${main} · ${a.tentative}% tentative` : main
+  const main = !a.busy ? 'Free now' : a.free_from ? `Busy · free from ${fmtDate(a.free_from)}` : 'Busy, no end date'
+  return a.tentative ? `${main} · tentative` : main
 }
 export const availabilityTone = (a: Availability | undefined) =>
-  !a ? '' : a.load <= 0 ? 'okc' : a.load < 100 ? 'warnc' : 'bad'
+  !a ? '' : a.busy ? 'bad' : a.tentative ? 'warnc' : 'okc'
 
 // "Pipeline project whose start date has passed": the system never confirms it on its own.
 export const startPassed = (p: Pick<ProjectRow, 'stage' | 'start_date'>) =>
   p.stage === 'pipeline' && !!p.start_date && p.start_date < todayIso()
 
 /* ---------- fit score (same weights as the prototype; validated levels only) ----------
-   52% how many required skills they meet · 18% how strong they are in those · 20% how free they
-   are on the day the work starts · 10% how many of those skills they're willing to use. */
+   52% how many required skills they meet · 18% how strong they are in those · 20% free (not on a
+   confirmed project) on the day the work starts · 10% how many of those skills they're willing to use. */
 export interface Requirement { skill_id: string; skill: string; min_level: number; headcount?: number }
 export interface HeldSkill { level: number | null; willing: boolean }
 export interface Fit { score: number; met: number; total: number; missing: string[] }
 
-export function fitScore(held: Record<string, HeldSkill>, reqs: Requirement[], load: number): Fit | null {
+export function fitScore(held: Record<string, HeldSkill>, reqs: Requirement[], busy: boolean): Fit | null {
   if (reqs.length === 0) return null
   const met = reqs.filter((r) => (held[r.skill_id]?.level ?? 0) >= r.min_level)
   const coverage = met.length / reqs.length
   const strength = met.length ? met.reduce((s, r) => s + (held[r.skill_id]?.level ?? 0), 0) / met.length / 5 : 0
-  const free = Math.max(0, 100 - load) / 100
+  const free = busy ? 0 : 1
   const willing = met.length ? met.filter((r) => held[r.skill_id]?.willing !== false).length / met.length : 0
   const missing = reqs
     .filter((r) => (held[r.skill_id]?.level ?? 0) < r.min_level)

@@ -42,7 +42,7 @@ export default function AskRole() {
   const role = roles.find((r) => r.id === roleId)
   const reqs: Requirement[] = useMemo(() => (role?.skills ?? []).map((s) => ({ skill_id: s.skill_id, skill: s.skill.name, min_level: s.min_level })), [role])
   const ranked = useMemo(() => people
-    .map((p) => ({ p, fit: fitScore(held[p.id] ?? {}, reqs, avail[p.id]?.load ?? 0), senior: senRank(p.seniority) >= senRank(role?.min_seniority) }))
+    .map((p) => ({ p, fit: fitScore(held[p.id] ?? {}, reqs, avail[p.id]?.busy ?? false), senior: senRank(p.seniority) >= senRank(role?.min_seniority) }))
     .filter((x) => x.fit && x.fit.met > 0)
     .sort((a, b) => Number(b.senior) - Number(a.senior) || (b.fit?.score ?? 0) - (a.fit?.score ?? 0) || a.p.full_name.localeCompare(b.p.full_name)),
   [people, held, reqs, avail, role])

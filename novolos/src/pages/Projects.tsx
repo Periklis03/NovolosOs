@@ -128,7 +128,7 @@ export default function Projects() {
               <div className="muted">{p.client ?? 'no client'}{p.project_lead_id === me?.id && ' · you lead this'}</div>
             </div>
             <div style={{ width: 110 }}>
-              <span className={`st st-${p.status}`}>{STATUS_LABEL[p.status]}{p.status === 'pipeline' && p.win_probability != null ? ` · ${p.win_probability}%` : ''}</span>
+              <span className={`st st-${p.status}`}>{STATUS_LABEL[p.status]}</span>
             </div>
             <div style={{ flex: 1.4 }} className="muted">
               {fmtRange(p.start_date, p.end_date)}

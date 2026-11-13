@@ -60,7 +60,7 @@ export default function People() {
     setDetail(((data ?? []) as unknown as Detail[]).sort((a, b) => (b.validated_level ?? 0) - (a.validated_level ?? 0)))
   }
 
-  const shown = onlyFree ? people.filter((p) => (avail[p.employee_id]?.load ?? 0) < 100) : people
+  const shown = onlyFree ? people.filter((p) => !avail[p.employee_id]?.busy) : people
 
   return (
     <div style={{ maxWidth: 980 }}>
@@ -76,7 +76,7 @@ export default function People() {
           {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>validated ≥ {n}</option>)}
         </select>
         <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} /> Has free capacity now
+          <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} /> Available now
         </label>
         <span className="muted">{shown.length} {shown.length === 1 ? 'person' : 'people'}</span>
       </div>
@@ -113,7 +113,7 @@ export default function People() {
                 <Link className="linkbtn" to={`/one-pager/${p.employee_id}`} style={{ marginLeft: 'auto' }}>Open one-pager →</Link>
                 <div style={{ flexBasis: '100%' }} className="muted">
                   {bookings.length === 0 ? 'No current or upcoming projects.' : bookings.map((a, i) => (
-                    <span key={a.id}>{i > 0 && ' · '}<Link className="linkbtn" to={`/projects/${a.project_id}`}>{a.project_name}</Link> {a.percent}%{a.timing === 'future' ? ` from ${fmtRange(a.start_date, a.end_date).split(' – ')[0]}` : ''}{a.stage === 'pipeline' ? ' (tentative)' : ''}</span>
+                    <span key={a.id}>{i > 0 && ' · '}<Link className="linkbtn" to={`/projects/${a.project_id}`}>{a.project_name}</Link>{a.timing === 'future' ? ` from ${fmtRange(a.start_date, a.end_date).split(' – ')[0]}` : ''}{a.stage === 'pipeline' ? ' (tentative)' : ''}</span>
                   ))}
                 </div>
               </div>

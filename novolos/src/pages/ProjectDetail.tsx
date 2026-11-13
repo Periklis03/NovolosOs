@@ -94,14 +94,14 @@ export default function ProjectDetail() {
   const onTeamIds = useMemo(() => new Set(team.filter((a) => a.timing !== 'past').map((a) => a.employee_id)), [team])
   const candidates = useMemo(() => people
     .filter((x) => x.active && !onTeamIds.has(x.id))
-    .map((x) => ({ person: x, fit: fitScore(held[x.id] ?? {}, reqs, avail[x.id]?.load ?? 0) }))
+    .map((x) => ({ person: x, fit: fitScore(held[x.id] ?? {}, reqs, avail[x.id]?.busy ?? false) }))
     .filter((c) => c.fit && c.fit.met > 0)
     .sort((a, b) => (b.fit?.score ?? 0) - (a.fit?.score ?? 0) || a.person.full_name.localeCompare(b.person.full_name)),
   [people, onTeamIds, held, reqs, avail])
   const gaps = reqs.map((r) => {
     const qualified = (pid: string) => (held[pid]?.[r.skill_id]?.level ?? 0) >= r.min_level
     const onTeam = [...onTeamIds].filter(qualified).length
-    const free = people.filter((x) => x.active && !onTeamIds.has(x.id) && qualified(x.id) && (avail[x.id]?.load ?? 0) < 100).length
+    const free = people.filter((x) => x.active && !onTeamIds.has(x.id) && qualified(x.id) && !avail[x.id]?.busy).length
     return { ...r, onTeam, free, short: Math.max(0, (r.headcount ?? 1) - onTeam) }
   })
 
@@ -188,7 +188,7 @@ function Details({ project, canEdit, isAdmin, people, busy, run, teamSize, onDel
 }) {
   const initial = () => ({
     name: project.name, client: project.client ?? '', description: project.description ?? '', stage: project.stage,
-    win_probability: project.win_probability?.toString() ?? '', start_date: project.start_date ?? '',
+    start_date: project.start_date ?? '',
     end_date: project.end_date ?? '', project_lead_id: project.project_lead_id ?? '',
   })
   const [f, setF] = useState(initial)
@@ -197,7 +197,7 @@ function Details({ project, canEdit, isAdmin, people, busy, run, teamSize, onDel
   const save = async () => {
     const ok = await run(supabase.from('project').update({
       name: f.name.trim().replace(/\s+/g, ' '), client: f.client.trim() || null, description: f.description.trim() || null,
-      stage: f.stage, win_probability: f.stage === 'pipeline' && f.win_probability !== '' ? Number(f.win_probability) : null,
+      stage: f.stage,
       start_date: f.start_date || null, end_date: f.end_date || null,
       ...(isAdmin ? { project_lead_id: f.project_lead_id || null } : {}),
     }).eq('id', project.id), 'Project saved.')
@@ -215,7 +215,7 @@ function Details({ project, canEdit, isAdmin, people, busy, run, teamSize, onDel
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div>
-            <div><b>Stage:</b> {project.stage === 'pipeline' ? `Pipeline (not won yet)${project.win_probability != null ? ` · ${project.win_probability}% chance` : ''}` : cap(project.stage)}</div>
+            <div><b>Stage:</b> {project.stage === 'pipeline' ? 'Pipeline (not won yet)' : cap(project.stage)}</div>
             {project.description && <div className="muted" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{project.description}</div>}
           </div>
           {canEdit && (
@@ -243,9 +243,6 @@ function Details({ project, canEdit, isAdmin, people, busy, run, teamSize, onDel
             <option value="cancelled">Cancelled</option>
           </select>
         </label>
-        {f.stage === 'pipeline' && (
-          <label>Chance of winning (%)<input type="number" min={0} max={100} value={f.win_probability} onChange={(e) => setF({ ...f, win_probability: e.target.value })} /></label>
-        )}
         <label>Start{f.stage === 'confirmed' && ' (required)'}<input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} /></label>
         <label>End (empty = open-ended)<input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} /></label>
         <label>Project lead{!isAdmin && ' (admin only)'}
@@ -360,44 +357,42 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
   held: Record<string, Record<string, HeldSkill>>; canEdit: boolean; busy: boolean; run: Run
 }) {
   const blank = () => ({
-    employee_id: '', role_title: '', percent: 100,
+    employee_id: '', role_title: '',
     start_date: project.start_date && project.start_date > todayIso() ? project.start_date : todayIso(),
     end_date: project.end_date ?? '',
   })
   const [f, setF] = useState(blank)
   const [editId, setEditId] = useState<string | null>(null)
-  const [e, setE] = useState({ role_title: '', percent: 100, start_date: '', end_date: '' })
+  const [e, setE] = useState({ role_title: '', start_date: '', end_date: '' })
   const [timing, setTiming] = useState<'now' | 'past'>('now')
   const nameOf = (pid: string) => people.find((x) => x.id === pid)?.full_name ?? 'someone outside your team'
   const inactive = (pid: string) => people.some((x) => x.id === pid && !x.active)
 
-  // Booked % of one person at the busiest point of a period, on confirmed projects (not counting `skipId`)
-  const peakLoad = async (employeeId: string, from: string, to: string | null, percent: number, skipId?: string) => {
-    if (project.stage !== 'confirmed') return 0
-    const { data } = await supabase.from('allocation_overview').select('id, percent, start_date, end_date, stage').eq('employee_id', employeeId)
-    const others = ((data ?? []) as AllocationRow[]).filter((a) => a.id !== skipId && a.stage === 'confirmed'
-      && a.start_date <= (to ?? '9999-12-31') && (a.end_date ?? '9999-12-31') >= from)
-    const days = [from, ...others.map((a) => a.start_date).filter((d) => d > from && d <= (to ?? '9999-12-31'))]
-    return Math.max(...days.map((d) => percent + others
-      .filter((a) => a.start_date <= d && (a.end_date ?? '9999-12-31') >= d).reduce((s, a) => s + a.percent, 0)))
-  }
-  const okToBook = async (employeeId: string, from: string, to: string | null, percent: number, skipId?: string) => {
-    const peak = await peakLoad(employeeId, from, to, percent, skipId)
-    return peak <= 100 || window.confirm(`${nameOf(employeeId)} would be booked ${peak}% at the busiest point of this period. Save anyway?`)
+  // Usually a person is on one project at a time: on a confirmed project, warn when the period
+  // overlaps another confirmed project of theirs (not counting `skipId`). It's a warning, not a block.
+  const okToBook = async (employeeId: string, from: string, to: string | null, skipId?: string) => {
+    if (project.stage !== 'confirmed') return true
+    const { data } = await supabase.from('allocation_overview')
+      .select('id, project_id, project_name, start_date, end_date, stage').eq('employee_id', employeeId)
+    const clash = ((data ?? []) as AllocationRow[]).filter((a) => a.id !== skipId && a.stage === 'confirmed'
+      && a.project_id !== project.id && a.start_date <= (to ?? '9999-12-31') && (a.end_date ?? '9999-12-31') >= from)
+    if (clash.length === 0) return true
+    const where = clash.map((a) => `${a.project_name} (${fmtRange(a.start_date, a.end_date)})`).join(', ')
+    return window.confirm(`${nameOf(employeeId)} is already on ${where} during these dates. Put them on ${project.name} as well?`)
   }
 
   const add = async () => {
     if (!f.employee_id || !f.start_date) return
-    if (!(await okToBook(f.employee_id, f.start_date, f.end_date || null, f.percent))) return
+    if (!(await okToBook(f.employee_id, f.start_date, f.end_date || null))) return
     if (await run(supabase.from('allocation').insert({
       project_id: project.id, employee_id: f.employee_id, role_title: f.role_title.trim() || null,
-      percent: f.percent, start_date: f.start_date, end_date: f.end_date || null,
+      start_date: f.start_date, end_date: f.end_date || null,
     }), `${nameOf(f.employee_id)} added to the team.`)) setF(blank())
   }
   const saveEdit = async (a: AllocationRow) => {
-    if (!(await okToBook(a.employee_id, e.start_date, e.end_date || null, e.percent, a.id))) return
+    if (!(await okToBook(a.employee_id, e.start_date, e.end_date || null, a.id))) return
     if (await run(supabase.from('allocation').update({
-      role_title: e.role_title.trim() || null, percent: e.percent, start_date: e.start_date, end_date: e.end_date || null,
+      role_title: e.role_title.trim() || null, start_date: e.start_date, end_date: e.end_date || null,
     }).eq('id', a.id), `${nameOf(a.employee_id)} updated.`)) setEditId(null)
   }
   const remove = (a: AllocationRow) => {
@@ -406,7 +401,7 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
   }
 
   // when adding someone, show how they match the stack
-  const pick = f.employee_id ? fitScore(held[f.employee_id] ?? {}, reqs, 0) : null
+  const pick = f.employee_id ? fitScore(held[f.employee_id] ?? {}, reqs, false) : null
   const shown = team.filter((a) => (timing === 'past' ? a.timing === 'past' : a.timing !== 'past'))
   const pastCount = team.filter((a) => a.timing === 'past').length
 
@@ -426,9 +421,6 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
         <div className="pad row" key={a.id} style={{ borderBottom: '1px solid var(--line)' }}>
           <b>{nameOf(a.employee_id)}</b>
           <input placeholder="Role on the project" value={e.role_title} onChange={(x) => setE({ ...e, role_title: x.target.value })} />
-          <select value={e.percent} onChange={(x) => setE({ ...e, percent: Number(x.target.value) })}>
-            {[10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100].map((n) => <option key={n} value={n}>{n}%</option>)}
-          </select>
           <input type="date" value={e.start_date} onChange={(x) => setE({ ...e, start_date: x.target.value })} />
           <input type="date" value={e.end_date} onChange={(x) => setE({ ...e, end_date: x.target.value })} />
           <button className="small" disabled={busy || !e.start_date} onClick={() => saveEdit(a)}>Save</button>
@@ -441,12 +433,11 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
             {inactive(a.employee_id) && <span className="tag bad" style={{ marginLeft: 6 }}>inactive</span>}
             <div className="muted">{a.role_title ?? 'no role set'}</div>
           </div>
-          <div style={{ width: 60 }}>{a.percent}%</div>
           <div style={{ flex: 1.4 }} className="muted">{fmtRange(a.start_date, a.end_date)}</div>
           <span className={`tag ${a.timing === 'current' ? 'okc' : ''}`} style={{ width: 70, textAlign: 'center' }}>{a.timing}</span>
           {canEdit && (
             <>
-              <button className="small" disabled={busy} onClick={() => { setEditId(a.id); setE({ role_title: a.role_title ?? '', percent: a.percent, start_date: a.start_date, end_date: a.end_date ?? '' }) }}>Edit</button>
+              <button className="small" disabled={busy} onClick={() => { setEditId(a.id); setE({ role_title: a.role_title ?? '', start_date: a.start_date, end_date: a.end_date ?? '' }) }}>Edit</button>
               <button className="ghost small" style={{ marginTop: 0 }} disabled={busy} onClick={() => remove(a)}>Remove</button>
             </>
           )}
@@ -460,9 +451,6 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
               {people.filter((x) => x.active).map((x) => <option key={x.id} value={x.id}>{x.full_name}</option>)}
             </select>
             <input placeholder="Role on the project, e.g. Backend" value={f.role_title} onChange={(x) => setF({ ...f, role_title: x.target.value })} />
-            <select value={f.percent} onChange={(x) => setF({ ...f, percent: Number(x.target.value) })}>
-              {[10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100].map((n) => <option key={n} value={n}>{n}%</option>)}
-            </select>
             <input type="date" value={f.start_date} onChange={(x) => setF({ ...f, start_date: x.target.value })} title="From" />
             <input type="date" value={f.end_date} onChange={(x) => setF({ ...f, end_date: x.target.value })} title="To (empty = open-ended)" />
             <button onClick={add} disabled={busy || !f.employee_id || !f.start_date}>Add to team</button>
@@ -473,7 +461,7 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
             </div>
           )}
           {!project.start_date && <div className="muted" style={{ marginTop: 8 }}>Tip: give the project dates so the team's dates default to them.</div>}
-          {project.stage === 'pipeline' && <div className="muted" style={{ marginTop: 8 }}>This project is still in the pipeline: people on it show as tentative and stay free in availability.</div>}
+          {project.stage === 'pipeline' && <div className="muted" style={{ marginTop: 8 }}>This project is still in the pipeline: people on it show as tentative and still count as free.</div>}
         </div>
       )}
     </div>

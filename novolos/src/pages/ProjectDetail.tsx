@@ -13,7 +13,7 @@ import {
 
 interface Req extends Requirement { id: string }
 interface Person { id: string; full_name: string; role_title: string | null; seniority: string | null; active: boolean }
-interface RoleProfile { id: string; name: string; skills: { skill_id: string; min_level: number }[] }
+interface RoleProfile { id: string; name: string; description: string | null; skills: { skill_id: string; min_level: number }[] }
 interface SkillOpt { id: string; name: string }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LEVELS = [1, 2, 3, 4, 5]
@@ -49,7 +49,7 @@ export default function ProjectDetail() {
       supabase.from('employee').select('id, full_name, role_title, seniority, active').order('full_name'),
       supabase.from('employee_skill').select('employee_id, skill_id, validated_level, willing'),
       supabase.from('skill').select('id, name').eq('active', true).order('name'),
-      supabase.from('role_profile').select('id, name, skills:role_profile_skill(skill_id, min_level)').order('name'),
+      supabase.from('role_profile').select('id, name, description, skills:role_profile_skill(skill_id, min_level)').order('name'),
     ])
     const err = p.error ?? r.error ?? t.error ?? e.error ?? es.error ?? s.error ?? rp.error
     if (err) { setError(err.message); setState('ready'); return }
@@ -135,7 +135,7 @@ export default function ProjectDetail() {
       <Details project={project} canEdit={canEdit} isAdmin={isAdmin} people={people} busy={busy} run={run}
         teamSize={team.length} onDeleted={() => navigate('/projects')} setError={setError} />
       <Stack project={project} reqs={reqs} skills={skills} roleProfiles={roleProfiles} canEdit={canEdit} busy={busy} run={run} setBusy={setBusy} setError={setError} setMsg={setMsg} load={load} />
-      <Team project={project} team={team} people={people} reqs={reqs} held={held} canEdit={canEdit} busy={busy} run={run} />
+      <Team project={project} team={team} people={people} reqs={reqs} profiles={roleProfiles} held={held} canEdit={canEdit} busy={busy} run={run} />
 
       {reqs.length > 0 && (
         <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
@@ -352,8 +352,31 @@ function Stack({ project, reqs, skills, roleProfiles, canEdit, busy, run, setBus
 }
 
 /* ---------------- team ---------------- */
-function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
-  project: ProjectRow; team: AllocationRow[]; people: Person[]; reqs: Req[]
+// Role on the project: pick one of the role profiles (the description explains it), or write your own.
+function RolePick({ value, profiles, onChange }: { value: string; profiles: RoleProfile[]; onChange: (v: string) => void }) {
+  const known = profiles.some((p) => p.name === value)
+  const [other, setOther] = useState(value !== '' && !known)
+  const chosen = profiles.find((p) => p.name === value)
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
+      <span className="row">
+        <select value={other ? '__other' : value} title={chosen?.description ?? undefined}
+          onChange={(x) => {
+            if (x.target.value === '__other') { setOther(true); onChange(known ? '' : value) } else { setOther(false); onChange(x.target.value) }
+          }}>
+          <option value="">Role on the project…</option>
+          {profiles.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+          <option value="__other">Other (write it)…</option>
+        </select>
+        {other && <input placeholder="Role on the project, e.g. Backend" maxLength={80} value={value} onChange={(x) => onChange(x.target.value)} />}
+      </span>
+      {chosen?.description && <span className="muted" style={{ maxWidth: 320, whiteSpace: 'normal' }}>{chosen.description}</span>}
+    </span>
+  )
+}
+
+function Team({ project, team, people, reqs, profiles, held, canEdit, busy, run }: {
+  project: ProjectRow; team: AllocationRow[]; people: Person[]; reqs: Req[]; profiles: RoleProfile[]
   held: Record<string, Record<string, HeldSkill>>; canEdit: boolean; busy: boolean; run: Run
 }) {
   const blank = () => ({
@@ -420,7 +443,7 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
       {shown.map((a) => editId === a.id ? (
         <div className="pad row" key={a.id} style={{ borderBottom: '1px solid var(--line)' }}>
           <b>{nameOf(a.employee_id)}</b>
-          <input placeholder="Role on the project" value={e.role_title} onChange={(x) => setE({ ...e, role_title: x.target.value })} />
+          <RolePick value={e.role_title} profiles={profiles} onChange={(v) => setE({ ...e, role_title: v })} />
           <input type="date" value={e.start_date} onChange={(x) => setE({ ...e, start_date: x.target.value })} />
           <input type="date" value={e.end_date} onChange={(x) => setE({ ...e, end_date: x.target.value })} />
           <button className="small" disabled={busy || !e.start_date} onClick={() => saveEdit(a)}>Save</button>
@@ -450,7 +473,7 @@ function Team({ project, team, people, reqs, held, canEdit, busy, run }: {
               <option value="">Add a person…</option>
               {people.filter((x) => x.active).map((x) => <option key={x.id} value={x.id}>{x.full_name}</option>)}
             </select>
-            <input placeholder="Role on the project, e.g. Backend" value={f.role_title} onChange={(x) => setF({ ...f, role_title: x.target.value })} />
+            <RolePick value={f.role_title} profiles={profiles} onChange={(v) => setF({ ...f, role_title: v })} />
             <input type="date" value={f.start_date} onChange={(x) => setF({ ...f, start_date: x.target.value })} title="From" />
             <input type="date" value={f.end_date} onChange={(x) => setF({ ...f, end_date: x.target.value })} title="To (empty = open-ended)" />
             <button onClick={add} disabled={busy || !f.employee_id || !f.start_date}>Add to team</button>

@@ -20,6 +20,7 @@ export default function AdminRoles() {
   const [draft, setDraft] = useState<Record<string, { skill: string; level: number }>>({})
   const [editing, setEditing] = useState<string | null>(null)
   const [edit, setEdit] = useState({ name: '', description: '' })
+  const [newDesc, setNewDesc] = useState('')
 
   const load = useCallback(async () => {
     const [r, s] = await Promise.all([
@@ -48,7 +49,7 @@ export default function AdminRoles() {
   const create = async () => {
     const name = newName.trim().replace(/\s+/g, ' ')
     if (!name) return
-    if (await run(supabase.from('role_profile').insert({ name }), `Role profile “${name}” added. Now add its skills.`)) setNewName('')
+    if (await run(supabase.from('role_profile').insert({ name, description: newDesc.trim() || null }), `Role profile “${name}” added. Now add its skills.`)) { setNewName(''); setNewDesc('') }
   }
   const saveEdit = async (r: Role) => {
     const name = edit.name.trim().replace(/\s+/g, ' ')
@@ -81,6 +82,8 @@ export default function AdminRoles() {
         <button onClick={create} disabled={busy || !newName.trim()}>+ Add role</button>
         <span className="muted">{list.length} {list.length === 1 ? 'role profile' : 'role profiles'}</span>
       </div>
+      <textarea placeholder="Description (optional): what this role does, in a sentence or two" value={newDesc} maxLength={500} rows={2}
+        onChange={(e) => setNewDesc(e.target.value)} style={{ width: '100%', maxWidth: 560, marginBottom: 12 }} />
 
       {list.length === 0 && <div className="card muted">No role profiles yet.</div>}
       {list.map((r) => {
@@ -90,15 +93,24 @@ export default function AdminRoles() {
           <div className="card" key={r.id} style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }} data-role={r.name}>
             <div className="thead row" style={{ justifyContent: 'space-between' }}>
               {editing === r.id ? (
-                <span className="row" style={{ flex: 1 }}>
-                  <input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} style={{ minWidth: 220 }} />
-                  <input placeholder="Short description (optional)" value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} style={{ flex: 1 }} />
-                  <button className="small" disabled={busy} onClick={() => saveEdit(r)}>Save</button>
-                  <button className="ghost small" style={{ marginTop: 0 }} onClick={() => setEditing(null)}>Cancel</button>
+                <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} style={{ maxWidth: 320 }} />
+                  <textarea placeholder="Description (optional)" rows={3} maxLength={500} value={edit.description}
+                    onChange={(e) => setEdit({ ...edit, description: e.target.value })} style={{ width: '100%', maxWidth: 560 }} />
+                  <span className="row">
+                    <button className="small" disabled={busy} onClick={() => saveEdit(r)}>Save</button>
+                    <button className="ghost small" style={{ marginTop: 0 }} onClick={() => setEditing(null)}>Cancel</button>
+                    <span className="muted">{edit.description.length}/500</span>
+                  </span>
                 </span>
               ) : (
                 <>
-                  <span style={{ fontSize: 13, color: 'var(--ink)' }}>{r.name}{r.description && <span className="muted"> · {r.description}</span>}</span>
+                  <span style={{ fontSize: 13, color: 'var(--ink)' }}>
+                    {r.name}
+                    {r.description
+                      ? <div className="muted" style={{ fontWeight: 400, marginTop: 2, maxWidth: 560, whiteSpace: 'normal' }}>{r.description}</div>
+                      : <div className="muted" style={{ fontWeight: 400, marginTop: 2 }}>No description yet</div>}
+                  </span>
                   <span className="row">
                     <select value={r.min_seniority ?? ''} disabled={busy} title="Minimum seniority"
                       onChange={(e) => run(supabase.from('role_profile').update({ min_seniority: e.target.value || null }).eq('id', r.id),
@@ -106,7 +118,7 @@ export default function AdminRoles() {
                       <option value="">Any seniority</option>
                       {SENIORITY.map((s) => <option key={s} value={s}>{cap(s)}+</option>)}
                     </select>
-                    <button className="small" onClick={() => { setEditing(r.id); setEdit({ name: r.name, description: r.description ?? '' }) }}>Rename</button>
+                    <button className="small" onClick={() => { setEditing(r.id); setEdit({ name: r.name, description: r.description ?? '' }) }}>Edit</button>
                     <button className="ghost small" style={{ marginTop: 0 }} disabled={busy} onClick={() => remove(r)}>Delete</button>
                   </span>
                 </>
